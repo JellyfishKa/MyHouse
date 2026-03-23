@@ -4,7 +4,7 @@ Project from Faculty of maths and IT MRSU for Accelerator "OgarevPRO"
 
 ---
 
-REST API для управления умным домом на базе Docker (PostgreSQL + TimescaleDB + Redis + Node.js).
+REST API для MyHouse на базе Docker (PostgreSQL + TimescaleDB + Redis + Node.js).
 
 ## 🚀 Быстрый старт
 
