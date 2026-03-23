@@ -1,0 +1,18 @@
+# Зависимости Node.js
+node_modules
+
+# Логи npm
+npm-debug.log
+
+# Git
+.git
+.gitignore
+
+# Документация
+README.md
+
+# Переменные окружения
+.env
+
+# Файлы системы
+.DS_Store
