@@ -51,7 +51,7 @@ services:
     container_name: myhouse-backend
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      PORT: ${BACKEND_PORT:-3000}
+      PORT: ${BACKEND_PORT:-8000}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${DB_USER:-postgres}
@@ -61,7 +61,7 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
     ports:
-      - "${BACKEND_PORT:-3000}:3000"
+      - "${BACKEND_PORT:-8000}:8000"
     networks:
       - myhouse-network
     depends_on:

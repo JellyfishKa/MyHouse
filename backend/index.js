@@ -4,14 +4,40 @@ const { Pool } = require('pg');
 const redis = require('redis');
 const cors = require('cors');
 const morgan = require('morgan');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
+
+// Конфигурация Swagger
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'MyHouse API',
+      version: '1.0.0',
+      description: 'API для управления данными в MyHouse',
+    },
+    servers: [
+      {
+        url: 'http://localhost:8000',
+        description: 'Development server',
+      },
+    ],
+  },
+  apis: ['./index.js'],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8000;
 
 // Подключаем middleware (обработчики запросов)
 app.use(cors());
 app.use(morgan('combined'));
 app.use(express.json());
+
+// Swagger UI документация
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Создаём пул соединений с PostgreSQL для управления подключениями к БД
 const pool = new Pool({
@@ -50,6 +76,31 @@ pool.on('error', (err) => {
   console.error('Непредвиденная ошибка при неактивном подключении', err);
 });
 
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Проверка здоровья системы
+ *     description: Проверяет состояние подключения к БД и Redis
+ *     tags:
+ *       - Health
+ *     responses:
+ *       200:
+ *         description: Система работает правильно
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                 timestamp:
+ *                   type: string
+ *                 database:
+ *                   type: string
+ *                 redis:
+ *                   type: string
+ */
 // Эндпоинт проверки здоровья системы
 app.get('/health', async (req, res) => {
   try {
@@ -71,6 +122,18 @@ app.get('/health', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/test:
+ *   get:
+ *     summary: Тест подключения к БД
+ *     description: Проверяет подключение к PostgreSQL
+ *     tags:
+ *       - Database
+ *     responses:
+ *       200:
+ *         description: Подключение успешно
+ */
 // Тестовый эндпоинт для проверки подключения к базе данных
 app.get('/api/test', async (req, res) => {
   try {
@@ -85,6 +148,29 @@ app.get('/api/test', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/cache:
+ *   post:
+ *     summary: Сохранить значение в кеш
+ *     description: Сохраняет ключ-значение в Redis
+ *     tags:
+ *       - Cache
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               key:
+ *                 type: string
+ *               value:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Значение сохранено
+ */
 // Эндпоинт для сохранения данных в Redis кеш
 app.post('/api/cache', async (req, res) => {
   try {
@@ -97,6 +183,24 @@ app.post('/api/cache', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/cache/{key}:
+ *   get:
+ *     summary: Получить значение из кеша
+ *     description: Извлекает значение по ключу из Redis
+ *     tags:
+ *       - Cache
+ *     parameters:
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Значение найдено
+ */
 // Эндпоинт для получения данных из Redis кеша
 app.get('/api/cache/:key', async (req, res) => {
   try {

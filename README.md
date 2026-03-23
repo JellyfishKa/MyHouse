@@ -1,6 +1,6 @@
 # MyHouse
 
-**Project from Faculty of maths and IT MRSU for Accelerator "OgarevPRO"**
+Project from Faculty of maths and IT MRSU for Accelerator "OgarevPRO"
 
 ---
 
@@ -16,7 +16,9 @@ cd MyHouse
 docker-compose up -d
 ```
 
-Проверка: `curl http://localhost:3000/health`
+Проверка: `curl http://localhost:8000/health`
+
+Документация API: http://localhost:8000/docs
 
 ## 📦 Сервисы
 
@@ -24,9 +26,11 @@ docker-compose up -d
 |--------|------|---------|
 | PostgreSQL + TimescaleDB | 5432 | База данных |
 | Redis | 6379 | Кеш |
-| Backend API | 3000 | REST API |
+| Backend API | 8000 | REST API + Swagger UI (/docs) |
 
 ## 📡 API
+
+Полная документация доступна на **http://localhost:8000/docs** (Swagger UI)
 
 ```bash
 # Статус системы
@@ -69,5 +73,5 @@ DB_PASSWORD=postgres
 DB_NAME=myhouse
 REDIS_PASSWORD=redis
 NODE_ENV=development
-BACKEND_PORT=3000
+BACKEND_PORT=8000
 ```
