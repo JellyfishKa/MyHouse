@@ -24,3 +24,15 @@ class CategorySummary(BaseModel):
     category: str
     kwh: float
     cost_rub: float
+
+
+class AnomalyResponse(BaseModel):
+    id: UUID
+    time: datetime
+    category: str
+    severity: str
+    value: float
+    expected: float
+
+    class Config:
+        from_attributes = True

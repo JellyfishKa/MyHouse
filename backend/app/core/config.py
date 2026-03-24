@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str | None = None
     NODE_ENV: str = "development"
     BACKEND_PORT: int = 8000
-    ELECTRICITY_TARIFF: float = 5.0
+    ELECTRICITY_TARIFF: float = 7.0
 
     @property
     def DATABASE_URL(self) -> str:

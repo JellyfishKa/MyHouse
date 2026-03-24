@@ -31,7 +31,14 @@ class SensorCategory(str, enum.Enum):
     LIGHTING = "lighting"
 
 
+class SeverityLevel(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
 # === MODELS ===
+
 
 class Object(Base):
     __tablename__ = "objects"
@@ -57,6 +64,44 @@ class Object(Base):
         back_populates="object",
         cascade="all, delete-orphan"
     )
+
+
+class Anomaly(Base):
+    __tablename__ = "anomalies"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid()
+    )
+
+    sensor_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sensors.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    detected_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        index=True
+    )
+
+    severity: Mapped[SeverityLevel] = mapped_column(
+        ENUM(SeverityLevel, name="severity_level_enum", create_type=True),
+        nullable=False
+    )
+
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    expected_value: Mapped[float] = mapped_column(Float, nullable=True)
+
+    sensor: Mapped["Sensor"] = relationship("Sensor",
+                                            back_populates="anomalies")
+
+    def __repr__(self) -> str:
+        return f"<Anomaly(id={self.id},"\
+            "sensor={self.sensor_id}, severity='{self.severity}')>"
 
 
 class Sensor(Base):
@@ -93,6 +138,11 @@ class Sensor(Base):
     object: Mapped["Object"] = relationship("Object", back_populates="sensors")
     readings: Mapped[list["Reading"]] = relationship(
         "Reading",
+        back_populates="sensor",
+        cascade="all, delete-orphan"
+    )
+    anomalies: Mapped[list["Anomaly"]] = relationship(
+        "Anomaly",
         back_populates="sensor",
         cascade="all, delete-orphan"
     )
