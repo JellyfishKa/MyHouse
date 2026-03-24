@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -13,3 +13,8 @@ class SensorReading(BaseModel):
 
 class ReadingBatch(BaseModel):
     readings: List[SensorReading]
+
+
+class AggregatedReading(BaseModel):
+    time: datetime
+    value: Optional[float]
