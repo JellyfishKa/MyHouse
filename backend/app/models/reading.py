@@ -18,3 +18,9 @@ class ReadingBatch(BaseModel):
 class AggregatedReading(BaseModel):
     time: datetime
     value: Optional[float]
+
+
+class CategorySummary(BaseModel):
+    category: str
+    kwh: float
+    cost_rub: float
