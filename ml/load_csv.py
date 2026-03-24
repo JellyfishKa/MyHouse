@@ -36,8 +36,12 @@ def post_batch(url: str, readings: list) -> int:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read()).get("inserted", 0)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read()).get("inserted", 0)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {e.code}: {body}") from None
 
 
 def iter_standard(file_path: str):
