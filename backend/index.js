@@ -34,7 +34,7 @@ const port = process.env.PORT || 8000;
 // Подключаем middleware (обработчики запросов)
 app.use(cors());
 app.use(morgan('combined'));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Swagger UI документация
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -50,8 +50,10 @@ const pool = new Pool({
 
 // Клиент Redis для управления кешем
 const redisClient = redis.createClient({
-  host: process.env.REDIS_HOST,
-  port: process.env.REDIS_PORT,
+  socket: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT) || 6379,
+  },
   password: process.env.REDIS_PASSWORD,
 });
 

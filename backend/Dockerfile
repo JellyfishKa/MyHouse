@@ -1,37 +1,35 @@
-# Этап 1: Сборка зависимостей
-FROM node:18-alpine AS builder
+FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY package*.json ./
+# Node.js 18 + системные зависимости
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl dumb-init gcc \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
+# Node.js зависимости
+COPY package*.json ./
 RUN npm install --omit=dev
 
-# Этап 2: Создание финального образа
-FROM node:18-alpine
+# Python зависимости (конвертация из UTF-16 если нужно)
+COPY requirements.txt ./
+RUN python3 -c "d=open('requirements.txt','rb').read();open('/tmp/req.txt','w').write(d.replace(b'\xff\xfe',b'').replace(b'\xfe\xff',b'').replace(b'\x00',b'').decode('ascii','ignore'))" && pip install --no-cache-dir -r /tmp/req.txt
 
-WORKDIR /app
-
-# Устанавливаем dumb-init для корректной обработки сигналов прерывания
-RUN apk add --no-cache dumb-init
-
-# Копируем зависимости из этапа сборки
-COPY --from=builder /app/node_modules ./node_modules
-
-# Копируем файлы приложения
+# Исходный код
 COPY . .
 
-# Создаём непривилегированного пользователя для безопасности контейнера
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001 && \
+RUN groupadd -g 1001 nodejs && \
+    useradd -u 1001 -g nodejs nodejs && \
     chown -R nodejs:nodejs /app
 
 USER nodejs
 
-EXPOSE 8000
+EXPOSE 8000 8001
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://localhost:8000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["node", "index.js"]
+CMD ["sh", "start.sh"]
