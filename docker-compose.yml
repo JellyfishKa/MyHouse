@@ -60,6 +60,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+      - "8001:8001"
     networks:
       - myhouse-network
     depends_on:
@@ -70,12 +71,33 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
+      - ml_data:/app/ml_results
     restart: unless-stopped
+
+  ml:
+    build: ./ml
+    container_name: myhouse-ml
+    environment:
+      DB_URL: ${DB_URL}
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-myhouse}
+    volumes:
+      - ml_data:/data/ml_results
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - myhouse-network
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  ml_data:
     driver: local
 
 networks:
