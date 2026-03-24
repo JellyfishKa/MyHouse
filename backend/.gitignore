@@ -1,0 +1,26 @@
+# Node.js зависимости
+node_modules/
+
+# Логи
+*.log
+
+# Операционные системы
+.DS_Store
+
+# Переменные окружения (локальные)
+.env.local
+.env.*.local
+
+# Директории сборки
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Временные файлы
+*.swp
+*.swo
+*~
+__pycache__

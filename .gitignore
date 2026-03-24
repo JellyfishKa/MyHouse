@@ -29,3 +29,38 @@ dist-ssr
 GEMINI.md 
 .gitignore
 .gitattributes
+# Переменные окружения
+.env
+.env.local
+.env.*.local
+
+# Виртуальное окружение
+venv
+.venv
+
+# Node.js
+node_modules/
+*.log
+
+# Операционные системы
+.DS_Store
+
+# Директории сборки
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Временные файлы
+*.swp
+*.swo
+*~
+
+# Next.js и другие фреймворки
+.next/
+out/
+
+# Отчёты о покрытии
+coverage/
