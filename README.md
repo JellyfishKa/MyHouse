@@ -1,152 +1,131 @@
 # MyHouse
 
-Project from Faculty of maths and IT MRSU for Accelerator "OgarevPRO"
+Система мониторинга энергопотребления с применением NILM.
+Проект факультета математики и ИТ МГРСУ для Акселератора «ОгарёвPRO».
 
-# React + TypeScript + Vite
+**Стек:** React + TypeScript + Vite, FastAPI, Node.js/Express, PostgreSQL + TimescaleDB, Redis, Docker.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ---
 
-REST API для MyHouse на базе Docker (PostgreSQL + TimescaleDB + Redis + Node.js).
+## Требования
 
-## 🚀 Быстрый старт
+- [Docker](https://docs.docker.com/get-docker/) 20.10+
+- [Docker Compose](https://docs.docker.com/compose/install/) 2.0+
+- [Git](https://git-scm.com/)
+- Python 3.11+ (для seed-скрипта и ML-утилит)
 
-**Требования:** Docker 20.10+, Docker Compose 2.0+
+---
+
+## Быстрый старт
 
 ```bash
-git clone https://github.com/your-username/MyHouse.git
+git clone https://github.com/JellyfishKa/MyHouse.git
 cd MyHouse
+cp .env.example .env
 docker-compose up -d
 ```
 
-Проверка: `curl http://localhost:8000/health`
-
-Документация API: http://localhost:8000/docs
-
-## 📦 Сервисы
-
-| Сервис | Порт | Описание |
-|--------|------|---------|
-| PostgreSQL + TimescaleDB | 5432 | База данных |
-| Redis | 6379 | Кеш |
-| Backend API | 8000 | REST API + Swagger UI (/docs) |
-
-## 📡 API
-
-Полная документация доступна на **http://localhost:8000/docs** (Swagger UI)
+Заполнить БД тестовыми данными (объект + 4 сенсора):
 
 ```bash
-# Статус системы
-GET /health
-
-# Тест БД
-GET /api/test
-
-# Сохранить в кеш
-POST /api/cache
-{ "key": "my_key", "value": "my_value" }
-
-# Получить из кеша
-GET /api/cache/my_key
+python infra/seed.py
 ```
 
-## 📚 Документация
+---
 
-- [DOCKER_SETUP.md](DOCKER_SETUP.md) — Полная инструкция
-- [LICENSE](LICENSE) — ISC лицензия
+## Сервисы после запуска
 
-## 🔧 Команды
+| Сервис | URL / Порт | Описание |
+|--------|-----------|----------|
+| Express API + Swagger | http://localhost:8000/docs | Node.js REST API |
+| FastAPI + Swagger | http://localhost:8001/docs | Python REST API (телеметрия) |
+| PostgreSQL + TimescaleDB | localhost:5432 | База данных |
+| Redis | localhost:6379 | Кеш |
+
+Проверка работоспособности:
 
 ```bash
-# Логи
+curl http://localhost:8000/health
+curl http://localhost:8001/api/v1/healthcheck
+```
+
+---
+
+## Frontend (локальная разработка)
+
+```bash
+npm install
+npm run dev
+```
+
+Открыть: http://localhost:5173
+
+---
+
+## Загрузка REDD данных
+
+После запуска seed-скрипта:
+
+```bash
+python ml/load_csv.py \
+  --file data/redd/redd_house1_0.csv \
+  --redd \
+  --sensor-id a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+```
+
+---
+
+## Переменные окружения (.env)
+
+| Переменная | Дефолт | Описание |
+|------------|--------|----------|
+| `DB_URL` | `postgresql://postgres:postgres@postgres:5432/myhouse` | Connection string |
+| `REDIS_URL` | `redis://:redis@redis:6379` | Redis connection string |
+| `DB_USER` | `postgres` | Пользователь БД |
+| `DB_PASSWORD` | `postgres` | Пароль БД |
+| `DB_NAME` | `myhouse` | Имя базы данных |
+| `DB_PORT` | `5432` | Порт PostgreSQL |
+| `REDIS_PASSWORD` | `redis` | Пароль Redis |
+| `BACKEND_PORT` | `8000` | Порт Express |
+| `NODE_ENV` | `development` | Окружение |
+
+---
+
+## Полезные команды
+
+```bash
+# Логи всех сервисов
 docker-compose logs -f
+
+# Логи конкретного сервиса
+docker-compose logs -f backend
 
 # Подключение к БД
 docker-compose exec postgres psql -U postgres -d myhouse
 
 # Подключение к Redis
-docker-compose exec redis redis-cli
+docker-compose exec redis redis-cli -a redis
+
+# Пересборка backend
+docker-compose up -d --build backend
+
+# Остановить всё
+docker-compose down
 ```
 
-## ⚙️ Переменные (.env)
+---
 
-```env
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_NAME=myhouse
-REDIS_PASSWORD=redis
-NODE_ENV=development
-BACKEND_PORT=8000
-```
+## Известные проблемы
+
+- `requirements.txt` может сохраняться в UTF-16 на Windows — Dockerfile автоматически конвертирует при сборке.
+- `nilmtk-contrib` несовместим с Python 3.11.15+ (требует строго ==3.11.5) — не включён в зависимости ML-сервиса.
+
+---
+
+## Документация
+
+- [DOCKER_SETUP.md](DOCKER_SETUP.md) — Полная инструкция по Docker
+- [LICENSE](LICENSE) — ISC лицензия
 ## Применение методов NILM для анализа потоков напряжения и выявления неполадок оборудования
 Традиционные методы диагностики требуют установки датчиков на каждый агрегат. NILM позволяет анализировать состояние оборудования, используя только данные с главного электросчетчика (основного ввода), что снижает затраты на аппаратное обеспечение и упрощает внедрение систем предиктивной аналитики.
 ## Обзор источников данных и литературы

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,18 +21,21 @@ async def upload_telemetry_batch(
     insert_data = [reading.model_dump() for reading in batch.readings]
 
     try:
-        stmt = insert(Reading).values(insert_data)
-        await db.execute(stmt)
-        await db.commit()
-
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=422,
-            detail="One or more sensor_ids do not exist in the database."
+        stmt = (
+            pg_insert(Reading)
+            .values(insert_data)
+            .on_conflict_do_nothing()
+            .returning(Reading.time)
         )
+        result = await db.execute(stmt)
+        await db.commit()
+        inserted = len(result.fetchall())
+
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=str(e.orig))
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"inserted": len(insert_data)}
+    return {"inserted": inserted}
