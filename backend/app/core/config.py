@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         Returns the PostgreSQL connection string.
         """
         return (
-            f"postgresql+psycopg2://{self.DB_USER}:"
+            f"postgresql+asyncpg://{self.DB_USER}:"
             f"{self.DB_PASSWORD}@localhost:{self.DB_PORT}/{self.DB_NAME}"
         )
 
