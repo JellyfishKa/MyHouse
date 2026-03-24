@@ -85,8 +85,8 @@ class Sensor(Base):
     )
     unit: Mapped[str] = mapped_column(
         String,
-        default="кВт·ч",
-        server_default="кВт·ч",
+        default="кВт/ч",
+        server_default="кВт/ч",
         nullable=False
     )
 
