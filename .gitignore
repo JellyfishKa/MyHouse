@@ -3,6 +3,10 @@
 .env.local
 .env.*.local
 
+# Виртуальное окружение
+venv
+.venv
+
 # Node.js
 node_modules/
 *.log
