@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   # PostgreSQL с расширением TimescaleDB для временных рядов
   postgres:
-    image: timescale/timescaledb:latest-pg15
+    image: timescale/timescaledb:latest-pg16
     container_name: myhouse-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -37,7 +35,7 @@ services:
     networks:
       - myhouse-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
