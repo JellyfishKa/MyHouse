@@ -12,33 +12,33 @@ Usage:
 """
 import argparse
 import os
-
 import pandas as pd
-from sklearn.ensemble import IsolationForest
+
+from models import MLModel
 
 RESULTS_DIR = "/data/ml_results"
-CONTAMINATION = 0.05  # доля ожидаемых аномалий
 
 
 def detect_anomalies(input_path: str, output_path: str) -> None:
     print(f"Читаем данные из {input_path}")
+
     df = pd.read_csv(input_path, parse_dates=["time"])
 
-    if "value" not in df.columns:
-        raise ValueError("CSV должен содержать колонку 'value'")
+    model = MLModel()
+    features, predictions = model.fit_predict(df)
 
-    model = IsolationForest(contamination=CONTAMINATION, random_state=42)
-    df["anomaly"] = model.fit_predict(df[["value"]])
-    anomalies = df[df["anomaly"] == -1]
+    features["anomaly"] = predictions
+    anomalies = features[features["anomaly"] == -1]
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     anomalies.to_csv(output_path, index=False)
-    print(f"Найдено {len(anomalies)} аномалий из {len(df)} записей")
+
+    print(f"Найдено {len(anomalies)} аномалий")
     print(f"Результаты сохранены в {output_path}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Anomaly detection")
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--input",
         default=os.path.join(RESULTS_DIR, "disaggregated.csv"),
@@ -49,5 +49,8 @@ if __name__ == "__main__":
         default=os.path.join(RESULTS_DIR, "anomalies.csv"),
         help="Путь к выходному CSV",
     )
+
     args = parser.parse_args()
+
     detect_anomalies(args.input, args.output)
+    
