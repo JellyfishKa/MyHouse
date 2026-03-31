@@ -1,3 +1,9 @@
+# Датасет для обучения/предикта аномалий
+
+Данный датасет представляет записи о работе мотора насосной установки. Записи представлены в виде фреймов по 15 сек. Для обучения `isolation forest` требуется датасет уже с выбросами/аномалиями. Для обучения рекомендуется использовать `healthy noise` с `window size = 1000 - 500` и `contamination = 0.01 - 0.005`.
+
+## Описание датасета
+
 Motor Current and Vibration Monitoring Dataset for various Faults in an E-motor-driven Centrifugal Pump
 
 Authors: S. Bruinsma, R.D. Geertsma, R. Loendersloot, T. Tinga
@@ -39,6 +45,11 @@ Each sample is 15 seconds.
 
 Licensing - CC0 
  
+## Ссылки на статью о датасете и на сам датасет 
+
+Для установки необходимо минимум 90 гб памяти на диске 
+
 [link to full data](https://data.4tu.nl/datasets/2b61183e-c14f-4131-829b-cc4822c369d0/4)
 
 [link to Article](https://www.sciencedirect.com/science/article/pii/S235234092301017X?via%3Dihub#tbl0003)
+
