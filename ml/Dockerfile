@@ -14,4 +14,6 @@ COPY . .
 
 VOLUME ["/data/ml_results"]
 
-CMD ["sleep", "infinity"]
+EXPOSE 8002
+
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8002"]

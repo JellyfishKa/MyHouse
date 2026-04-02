@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Layout, Menu } from 'antd';
-import { Link, Outlet } from 'react-router-dom';
+import { Layout, Menu, ConfigProvider } from 'antd';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import {
   DashboardOutlined,
   WarningOutlined,
@@ -10,12 +10,12 @@ const { Header, Content, Sider } = Layout;
 
 const items = [
   {
-    key: '1',
+    key: '/',
     icon: <DashboardOutlined />,
     label: <Link to="/">Дашборд</Link>,
   },
   {
-    key: '2',
+    key: '/anomalies',
     icon: <WarningOutlined />,
     label: <Link to="/anomalies">Аномалии</Link>,
   },
@@ -23,24 +23,70 @@ const items = [
 
 const MainLayout = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const location = useLocation();
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={(value) => setCollapsed(value)}>
-        <div className="demo-logo-vertical" />
-        <Menu theme="dark" defaultSelectedKeys={['1']} mode="inline" items={items} />
-      </Sider>
-      <Layout>
-        <Header style={{ padding: 0, background: '#fff', textAlign: 'center' }}>
-          <h2 style={{ margin: 0, color: '#001529' }}>МойДом</h2>
-        </Header>
-        <Content style={{ margin: '0 16px' }}>
-          <div style={{ padding: 24, minHeight: 360, background: '#fff' }}>
-            <Outlet />
+    <ConfigProvider
+      theme={{
+        token: {
+          colorPrimary: '#5D3C97',
+          colorLink: '#5B72DA',
+          colorInfo: '#5B72DA',
+        },
+      }}
+    >
+      <Layout style={{ minHeight: '100vh' }}>
+        <Sider
+          collapsible
+          collapsed={collapsed}
+          onCollapse={(value) => setCollapsed(value)}
+          style={{ background: '#2B1655' }}
+        >
+          <div
+            style={{
+              height: 48,
+              margin: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: collapsed ? 14 : 18,
+              letterSpacing: 1,
+            }}
+          >
+            {collapsed ? 'МД' : 'МойДом'}
           </div>
-        </Content>
+          <Menu
+            theme="dark"
+            selectedKeys={[location.pathname]}
+            mode="inline"
+            items={items}
+            style={{ background: '#2B1655' }}
+          />
+        </Sider>
+        <Layout>
+          <Header
+            style={{
+              padding: '0 24px',
+              background: '#fff',
+              borderBottom: '2px solid #5D3C97',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <h2 style={{ margin: 0, color: '#5D3C97' }}>
+              Мониторинг энергопотребления
+            </h2>
+          </Header>
+          <Content style={{ margin: '16px' }}>
+            <div style={{ padding: 24, minHeight: 360, background: '#fff', borderRadius: 8 }}>
+              <Outlet />
+            </div>
+          </Content>
+        </Layout>
       </Layout>
-    </Layout>
+    </ConfigProvider>
   );
 };
 

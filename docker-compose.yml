@@ -78,12 +78,13 @@ services:
     build: ./ml
     container_name: myhouse-ml
     environment:
-      DB_URL: ${DB_URL}
       DB_HOST: postgres
       DB_PORT: ${DB_PORT:-5432}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-myhouse}
+    ports:
+      - "8002:8002"
     volumes:
       - ml_data:/data/ml_results
     depends_on:
@@ -91,6 +92,25 @@ services:
         condition: service_healthy
     networks:
       - myhouse-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myhouse-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - myhouse-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
