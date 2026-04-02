@@ -1,0 +1,18 @@
+--- 1. ДОБАВЛЯЕМ ОБЪЕКТЫ (OBJECTS) ---
+
+INSERT INTO objects (id, name, type, metadata) VALUES 
+('550e8400-e29b-41d4-a716-446655440000', 'Главный ЦОД', 'DATACENTER', '{"location": "Moscow"}'),
+('6ba7b810-9dad-11d1-80b4-00c04fd430c1', 'Цех №1 (Охлаждение)', 'WORKSHOP', '{"floor": 1}'),
+('6ba7b811-9dad-11d1-80b4-00c04fd430c2', 'Серверная Б (Бесперебойники)', 'DATACENTER', '{"rack": "A1-A10"}'),
+('6ba7b812-9dad-11d1-80b4-00c04fd430c3', 'Офисный блок (Освещение)', 'BUILDING', '{"zone": "Open Space"}')
+ON CONFLICT DO NOTHING;
+
+
+--- 2. ДОБАВЛЯЕМ ДАТЧИКИ (SENSORS) ---
+
+INSERT INTO sensors (id, object_id, type, category, unit) VALUES 
+('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '550e8400-e29b-41d4-a716-446655440000', 'ELECTRICITY', 'SERVERS', 'кВт/ч'),
+('d1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22', '6ba7b810-9dad-11d1-80b4-00c04fd430c1', 'ELECTRICITY', 'COOLING', 'кВт/ч'),
+('e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a33', '6ba7b811-9dad-11d1-80b4-00c04fd430c2', 'ELECTRICITY', 'UPS', 'кВт/ч'),
+('f3eebc99-9c0b-4ef8-bb6d-6bb9bd380a44', '6ba7b812-9dad-11d1-80b4-00c04fd430c3', 'ELECTRICITY', 'LIGHTING', 'кВт/ч')
+ON CONFLICT DO NOTHING;
