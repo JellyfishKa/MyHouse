@@ -36,3 +36,38 @@ GEMINI.md
 /backend/app/models/database/__pycache__
 /backend/app/models/database/alembic/__pycache__
 /backend/app/models/database/alembic/versions/__pycache__
+# Переменные окружения
+.env
+.env.local
+.env.*.local
+
+# Виртуальное окружение
+venv
+.venv
+
+# Node.js
+node_modules/
+*.log
+
+# Операционные системы
+.DS_Store
+
+# Директории сборки
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Временные файлы
+*.swp
+*.swo
+*~
+
+# Next.js и другие фреймворки
+.next/
+out/
+
+# Отчёты о покрытии
+coverage/
