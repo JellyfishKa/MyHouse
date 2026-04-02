@@ -29,3 +29,10 @@ dist-ssr
 GEMINI.md 
 .gitignore
 .gitattributes
+/backend/app/__pycache__
+/backend/app/api/__pycache__
+/backend/app/core/__pycache__
+/backend/app/models/__pycache__
+/backend/app/models/database/__pycache__
+/backend/app/models/database/alembic/__pycache__
+/backend/app/models/database/alembic/versions/__pycache__
