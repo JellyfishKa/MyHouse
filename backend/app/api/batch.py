@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import asc, func, insert, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.db import get_db
 from app.models.database.models import Reading
@@ -42,7 +43,7 @@ async def upload_telemetry_batch(
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"inserted": len(insert_data)}
+    return {"inserted": inserted}
 
 
 @router.get("/{sensor_id}", response_model=list[AggregatedReading])

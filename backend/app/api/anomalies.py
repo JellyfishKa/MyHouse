@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.core.db import get_db
-from app.models.database.models import Anomaly, Sensor
+from app.models.database.models import Anomaly, Sensor, SeverityLevel
 from app.models.reading import AnomalyBatchItem, AnomalyResponse
 
 router = APIRouter(prefix="/api/v1", tags=["Anomalies"])
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/v1", tags=["Anomalies"])
 @router.get("/anomalies", response_model=List[AnomalyResponse])
 async def get_anomalies(
     object_id: UUID,
-    severity: Optional[str] = None,
+    severity: Optional[SeverityLevel] = None,
     limit: int = 100,
     db: AsyncSession = Depends(get_db)
 ):
@@ -41,7 +41,7 @@ async def get_anomalies(
             id=a.id,
             time=a.detected_at,
             category=a.sensor.category.value if a.sensor else "unknown",
-            severity=a.severity.value,
+            severity=a.severity,
             value=a.value,
             expected=a.expected_value,
         )

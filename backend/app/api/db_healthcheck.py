@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 
@@ -8,13 +8,13 @@ router = APIRouter()
 
 
 @router.get("/healthcheck")
-def check_health(db: Session = Depends(get_db)):
+async def check_health(db: AsyncSession = Depends(get_db)):
     """
     Check the health of the database connection.
     """
     try:
         # Выполняем простейший запрос для проверки активности
-        db.execute(text("SELECT 1"))
+        await db.execute(text("SELECT 1"))
         return {
             "status": "ok",
             "database": "connected",
