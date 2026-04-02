@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     """
     DB_USER: str
     DB_PASSWORD: str
+    DB_HOST: str = "postgres"
     DB_NAME: str
     DB_PORT: int
 
@@ -23,12 +24,18 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        """
-        Returns the PostgreSQL connection string.
-        """
+        """Async URL для SQLAlchemy (asyncpg)."""
         return (
             f"postgresql+asyncpg://{self.DB_USER}:"
-            f"{self.DB_PASSWORD}@localhost:{self.DB_PORT}/{self.DB_NAME}"
+            f"{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        )
+
+    @property
+    def SYNC_DATABASE_URL(self) -> str:
+        """Sync URL для Alembic (psycopg2)."""
+        return (
+            f"postgresql+psycopg2://{self.DB_USER}:"
+            f"{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
     # Указываем абсолютный путь к .env файлу
