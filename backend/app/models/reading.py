@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
-from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+from app.models.database.models import SeverityLevel
 
 
 class SensorReading(BaseModel):
@@ -31,7 +31,7 @@ class AnomalyResponse(BaseModel):
     id: UUID
     time: datetime
     category: str
-    severity: str
+    severity: SeverityLevel
     value: float
     expected: Optional[float] = None
 
@@ -42,6 +42,6 @@ class AnomalyResponse(BaseModel):
 class AnomalyBatchItem(BaseModel):
     sensor_id: UUID
     detected_at: datetime
-    severity: str
+    severity: SeverityLevel
     value: float
     expected_value: Optional[float] = None

@@ -5,6 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Определяем базовую директорию проекта (backend/)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# Корень монорепозитория (на один уровень выше backend/)
+ROOT_DIR = BASE_DIR.parent
 
 
 class Settings(BaseSettings):
@@ -38,9 +40,9 @@ class Settings(BaseSettings):
             f"{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
-    # Указываем абсолютный путь к .env файлу
+    # Указываем абсолютный путь к .env файлу (лежит в корне репо)
     model_config = SettingsConfigDict(
-        env_file=os.path.join(BASE_DIR, ".env"),
+        env_file=os.path.join(ROOT_DIR, ".env"),
         env_ignore_empty=True,
         extra="ignore"
     )
