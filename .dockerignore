@@ -1,0 +1,9 @@
+node_modules
+dist
+data
+backend
+ml
+infra
+.git
+.env
+*.md

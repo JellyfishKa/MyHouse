@@ -5,3 +5,5 @@ tables>=3.8.0
 git+https://github.com/nilmtk/nilmtk.git
 psycopg2-binary==2.9.11
 python-dotenv==1.2.2
+fastapi==0.135.2
+uvicorn==0.42.0

@@ -32,7 +32,15 @@ class AnomalyResponse(BaseModel):
     category: str
     severity: str
     value: float
-    expected: float
+    expected: Optional[float] = None
 
     class Config:
         from_attributes = True
+
+
+class AnomalyBatchItem(BaseModel):
+    sensor_id: UUID
+    detected_at: datetime
+    severity: str
+    value: float
+    expected_value: Optional[float] = None
