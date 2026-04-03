@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { Spin, Alert, Empty } from 'antd';
+import { Skeleton, Alert, Empty } from 'antd';
 import {
   AreaChart,
   Area,
@@ -56,9 +56,9 @@ const ConsumptionChart = () => {
 
   if (isLoading) {
     return (
-      <div style={{ width: '100%', height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Spin size="large" />
-      </div>
+        <div style={{ width: '100%', height: 400, paddingTop: 40 }}>
+            <Skeleton active />
+        </div>
     );
   }
 

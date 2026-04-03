@@ -1,4 +1,4 @@
-import { Table, Tag, Typography, Empty, Alert, Spin } from 'antd';
+import { Table, Tag, Typography, Empty, Alert, Skeleton } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useAnomalies, type AnomalyRecord } from '../api/hooks';
 
@@ -68,42 +68,45 @@ const columns: ColumnsType<AnomalyRecord> = [
 const Anomalies = () => {
   const { data, isLoading, error } = useAnomalies();
 
-  if (isLoading) {
+  const tableContent = () => {
+    if (isLoading) {
+      return <Skeleton active />;
+    }
+
+    if (error) {
+      return (
+        <Alert
+          type="error"
+          message="Ошибка загрузки аномалий"
+          style={{ margin: 20 }}
+          showIcon
+        />
+      );
+    }
+    
     return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
-        <Spin size="large" />
-      </div>
-    );
+        <Table
+            columns={columns}
+            dataSource={data}
+            rowKey="id"
+            locale={{
+            emptyText: (
+                <Empty
+                description="Аномалий не обнаружено"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+            ),
+            }}
+            pagination={{ pageSize: 20, showSizeChanger: true }}
+        />
+    )
   }
 
-  if (error) {
-    return (
-      <Alert
-        type="error"
-        message="Ошибка загрузки аномалий"
-        style={{ margin: 20 }}
-        showIcon
-      />
-    );
-  }
 
   return (
     <div>
       <Title level={3} style={{ color: '#5D3C97' }}>Аномалии</Title>
-      <Table
-        columns={columns}
-        dataSource={data}
-        rowKey="id"
-        locale={{
-          emptyText: (
-            <Empty
-              description="Аномалий не обнаружено"
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-            />
-          ),
-        }}
-        pagination={{ pageSize: 20, showSizeChanger: true }}
-      />
+      {tableContent()}
     </div>
   );
 };

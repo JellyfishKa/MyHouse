@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { Spin } from 'antd';
+import { Skeleton } from 'antd';
 import SummaryCards from '../components/SummaryCards';
 
 const ConsumptionChart = React.lazy(() => import('../components/ConsumptionChart'));
@@ -9,7 +9,7 @@ const Dashboard = () => {
     <div>
       <h1>Дашборд</h1>
       <SummaryCards />
-      <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}><Spin size="large" /></div>}>
+      <Suspense fallback={<div style={{ width: '100%', height: 400, paddingTop: 40 }}><Skeleton active /></div>}>
         <ConsumptionChart />
       </Suspense>
     </div>
