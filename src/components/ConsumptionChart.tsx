@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { Spin, Alert, Empty } from 'antd';
+import { Skeleton, Alert, Empty, Tooltip as AntdTooltip, Tag } from 'antd';
 import {
   AreaChart,
   Area,
@@ -9,8 +9,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceDot,
 } from 'recharts';
-import { useTelemetry } from '../api/hooks';
+import { useTelemetry, useAnomalies, type AnomalyRecord } from '../api/hooks';
 
 // ID сенсоров из seed.py
 const SENSORS = [
@@ -20,6 +21,40 @@ const SENSORS = [
   { id: 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', label: 'Освещение', color: '#BDB3D8' },
 ];
 
+const categoryLabels: Record<string, string> = {
+    servers: 'Серверы',
+    cooling: 'Охлаждение',
+    ups: 'ИБП',
+    lighting: 'Освещение',
+};
+
+const severityConfig: Record<string, { color: string; label: string }> = {
+    low: { color: 'green', label: 'Низкий' },
+    medium: { color: 'gold', label: 'Средний' },
+    high: { color: 'orange', label: 'Высокий' },
+    critical: { color: 'red', label: 'Критический' },
+};
+
+const AnomalyDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    const an = payload as AnomalyRecord;
+
+    const title = (
+        <div>
+            <span>{categoryLabels[an.category] || an.category}</span><br/>
+            <span>Значение: {an.value.toFixed(2)}</span><br/>
+            <Tag color={severityConfig[an.severity]?.color}>{severityConfig[an.severity]?.label}</Tag>
+        </div>
+    )
+
+    return (
+        <AntdTooltip title={title}>
+            <circle cx={cx} cy={cy} r={5} stroke="red" strokeWidth={2} fill="white" />
+        </AntdTooltip>
+    );
+};
+
+
 const ConsumptionChart = () => {
   const now = useMemo(() => new Date().toISOString(), []);
   const weekAgo = useMemo(() => {
@@ -28,16 +63,17 @@ const ConsumptionChart = () => {
     return d.toISOString();
   }, []);
 
-  const queries = SENSORS.map((s) => useTelemetry(s.id, weekAgo, now, 'hour'));
+  const telemetryQueries = SENSORS.map((s) => useTelemetry(s.id, weekAgo, now, 'hour'));
+  const anomaliesQuery = useAnomalies();
 
-  const isLoading = queries.some((q) => q.isLoading);
-  const hasError = queries.some((q) => q.error);
+  const isLoading = telemetryQueries.some((q) => q.isLoading) || anomaliesQuery.isLoading;
+  const hasError = telemetryQueries.some((q) => q.error) || anomaliesQuery.error;
 
   const chartData = useMemo(() => {
     const timeMap = new Map<string, Record<string, number | string>>();
 
     SENSORS.forEach((sensor, idx) => {
-      const readings = queries[idx].data;
+      const readings = telemetryQueries[idx].data;
       if (!readings) return;
       readings.forEach((r) => {
         const timeKey = r.time;
@@ -52,13 +88,13 @@ const ConsumptionChart = () => {
     return Array.from(timeMap.values()).sort(
       (a, b) => new Date(a.time as string).getTime() - new Date(b.time as string).getTime(),
     );
-  }, [queries.map((q) => q.data)]);
+  }, [telemetryQueries.map((q) => q.data)]);
 
   if (isLoading) {
     return (
-      <div style={{ width: '100%', height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Spin size="large" />
-      </div>
+        <div style={{ width: '100%', height: 400, paddingTop: 40 }}>
+            <Skeleton active />
+        </div>
     );
   }
 
@@ -81,6 +117,8 @@ const ConsumptionChart = () => {
           <XAxis
             dataKey="time"
             tickFormatter={(time) => new Date(time).toLocaleDateString('ru-RU')}
+            type="category"
+            allowDuplicatedCategory
           />
           <YAxis />
           <Tooltip
@@ -98,6 +136,15 @@ const ConsumptionChart = () => {
               fill={sensor.color}
               fillOpacity={0.6}
             />
+          ))}
+          {anomaliesQuery.data?.map(an => (
+             <ReferenceDot
+                key={an.id}
+                x={an.time}
+                y={an.value}
+                ifOverflow="extendDomain"
+                shape={<AnomalyDot />}
+             />
           ))}
         </AreaChart>
       </ResponsiveContainer>

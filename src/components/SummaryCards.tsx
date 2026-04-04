@@ -1,4 +1,4 @@
-import { Row, Col, Card, Typography, Space, Spin, Alert } from 'antd';
+import { Row, Col, Card, Typography, Space, Skeleton, Alert } from 'antd';
 import {
   ThunderboltOutlined,
   ToolOutlined,
@@ -21,8 +21,16 @@ const SummaryCards = () => {
 
   if (isLoading) {
     return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
-        <Spin size="large" />
+      <div style={{ padding: '20px' }}>
+        <Row gutter={[16, 16]}>
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Col xs={24} sm={12} md={6} key={index}>
+              <Card>
+                <Skeleton active paragraph={{ rows: 2 }} />
+              </Card>
+            </Col>
+          ))}
+        </Row>
       </div>
     );
   }
