@@ -15,22 +15,22 @@ DB_NAME   = "myhouse"
 
 OBJECT_ID = "c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 SENSORS = [
-    ("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "SERVERS"),
-    ("d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "COOLING"),
-    ("e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "UPS"),
-    ("f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "LIGHTING"),
+    ("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "servers", "Серверы"),
+    ("d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "cooling", "Охлаждение"),
+    ("e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "ups", "ИБП"),
+    ("f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "lighting", "Освещение"),
 ]
 
 SQL = f"""
 INSERT INTO objects (id, name, type, metadata)
-VALUES ('{OBJECT_ID}', 'Датацентр МГУ', 'DATACENTER', '{{}}')
+VALUES ('{OBJECT_ID}', 'Датацентр МГУ', 'datacenter', '{{"source":"seed"}}')
 ON CONFLICT (id) DO NOTHING;
 """ + "".join(
-    f"""INSERT INTO sensors (id, object_id, type, category, unit)
-VALUES ('{sid}', '{OBJECT_ID}', 'ELECTRICITY', '{cat}', 'Вт')
+    f"""INSERT INTO sensors (id, object_id, type, category, label, unit)
+VALUES ('{sid}', '{OBJECT_ID}', 'electricity', '{cat}', '{label}', 'Вт')
 ON CONFLICT (id) DO NOTHING;
 """
-    for sid, cat in SENSORS
+    for sid, cat, label in SENSORS
 )
 
 
@@ -45,8 +45,8 @@ def seed() -> None:
         sys.exit(1)
 
     print(f"Объект 'Датацентр МГУ'  id={OBJECT_ID}")
-    for sensor_id, category in SENSORS:
-        print(f"  Сенсор {category:<10}  id={sensor_id}")
+    for sensor_id, category, label in SENSORS:
+        print(f"  Сенсор {label:<12} ({category}) id={sensor_id}")
     print("Seed выполнен.")
 
 

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     NODE_ENV: str = "development"
     BACKEND_PORT: int = 8000
     ELECTRICITY_TARIFF: float = 7.0
+    ML_SERVICE_URL: str = "http://ml:8002"
 
     @property
     def DATABASE_URL(self) -> str:

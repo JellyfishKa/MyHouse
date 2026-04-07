@@ -27,10 +27,14 @@ def fetch_readings(sensor_id: str, days: int = 7) -> pd.DataFrame:
             SELECT time, value
             FROM readings
             WHERE sensor_id = %s
-              AND time >= NOW() - INTERVAL '%s days'
+              AND time >= (
+                  SELECT COALESCE(MAX(time), NOW()) - (%s * INTERVAL '1 day')
+                  FROM readings
+                  WHERE sensor_id = %s
+              )
             ORDER BY time ASC
         """
-        df = pd.read_sql(query, conn, params=(sensor_id, days))
+        df = pd.read_sql(query, conn, params=(sensor_id, days, sensor_id))
         return df
     finally:
         conn.close()
@@ -46,10 +50,15 @@ def fetch_readings_by_object(object_id: str, days: int = 7) -> pd.DataFrame:
             FROM readings r
             JOIN sensors s ON s.id = r.sensor_id
             WHERE s.object_id = %s
-              AND r.time >= NOW() - INTERVAL '%s days'
+              AND r.time >= (
+                  SELECT COALESCE(MAX(r2.time), NOW()) - (%s * INTERVAL '1 day')
+                  FROM readings r2
+                  JOIN sensors s2 ON s2.id = r2.sensor_id
+                  WHERE s2.object_id = %s
+              )
             ORDER BY r.time ASC
         """
-        df = pd.read_sql(query, conn, params=(object_id, days))
+        df = pd.read_sql(query, conn, params=(object_id, days, object_id))
         return df
     finally:
         conn.close()
