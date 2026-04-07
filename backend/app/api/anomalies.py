@@ -41,6 +41,7 @@ async def get_anomalies(
             id=a.id,
             time=a.detected_at,
             category=a.sensor.category.value if a.sensor else "unknown",
+            sensor_label=a.sensor.label if a.sensor else None,
             severity=a.severity,
             value=a.value,
             expected=a.expected_value,

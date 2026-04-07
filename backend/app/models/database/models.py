@@ -128,6 +128,7 @@ class Sensor(Base):
         ),
         nullable=False
     )
+    label: Mapped[str] = mapped_column(String, nullable=False)
     unit: Mapped[str] = mapped_column(
         String,
         default="кВт/ч",

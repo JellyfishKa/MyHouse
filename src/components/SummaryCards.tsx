@@ -1,11 +1,12 @@
-import { Row, Col, Card, Typography, Space, Spin, Alert } from 'antd';
+import { Alert, Card, Col, Empty, Row, Skeleton, Space, Typography } from 'antd';
 import {
+  DashboardOutlined,
   ThunderboltOutlined,
   ToolOutlined,
   UsbOutlined,
   BulbOutlined,
 } from '@ant-design/icons';
-import { useSummary, type CategorySummary } from '../api/hooks';
+import type { SensorSummary } from '../api/hooks';
 
 const { Title, Text } = Typography;
 
@@ -16,58 +17,85 @@ const categoryConfig: Record<string, { icon: typeof ThunderboltOutlined; label: 
   lighting: { icon: BulbOutlined, label: 'Освещение' },
 };
 
-const SummaryCards = () => {
-  const { data, isLoading, error } = useSummary();
+interface SummaryCardsProps {
+  data?: SensorSummary[];
+  isLoading: boolean;
+  error: unknown;
+}
 
+const SummaryCards = ({ data, isLoading, error }: SummaryCardsProps) => {
   if (isLoading) {
     return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
-        <Spin size="large" />
-      </div>
+      <Row gutter={[16, 16]}>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Col xs={24} sm={12} xl={6} key={index}>
+            <Card className="surface-card">
+              <Skeleton active paragraph={{ rows: 4 }} />
+            </Card>
+          </Col>
+        ))}
+      </Row>
     );
   }
 
   if (error) {
-    return (
-      <div style={{ padding: 20 }}>
-        <Alert type="error" message="Ошибка загрузки данных" showIcon />
-      </div>
-    );
+    return <Alert type="error" message="Не удалось загрузить сводку по сенсорам" showIcon />;
   }
 
   if (!data || data.length === 0) {
-    return (
-      <div style={{ padding: 20 }}>
-        <Alert type="info" message="Нет данных за последние 7 дней" showIcon />
-      </div>
-    );
+    return <Empty description="Для выбранного объекта пока нет агрегированных данных" />;
   }
 
   return (
-    <div style={{ padding: '20px' }}>
-      <Row gutter={[16, 16]}>
-        {data.map((item: CategorySummary) => {
-          const config = categoryConfig[item.category] || {
-            icon: ThunderboltOutlined,
-            label: item.category,
-          };
-          const IconComponent = config.icon;
+    <Row gutter={[16, 16]}>
+      {data.map((item) => {
+        const config = categoryConfig[item.category] || {
+          icon: DashboardOutlined,
+          label: item.sensor_label,
+        };
+        const IconComponent = config.icon;
 
-          return (
-            <Col xs={24} sm={12} md={6} key={item.category}>
-              <Card>
-                <Space direction="vertical" align="center" style={{ width: '100%' }}>
-                  <IconComponent style={{ fontSize: '32px', color: '#5D3C97' }} />
-                  <Title level={5}>{config.label}</Title>
-                  <Text>{item.kwh} кВт*ч</Text>
-                  <Text strong>{item.cost_rub} ₽</Text>
-                </Space>
-              </Card>
-            </Col>
-          );
-        })}
-      </Row>
-    </div>
+        return (
+          <Col xs={24} sm={12} xl={6} key={item.sensor_id}>
+            <Card className="metric-card">
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <div className="metric-card__header">
+                  <div className="metric-card__icon">
+                    <IconComponent />
+                  </div>
+                  <div>
+                    <Text className="muted-label">{config.label}</Text>
+                    <Title level={4} style={{ margin: 0 }}>
+                      {item.sensor_label}
+                    </Title>
+                  </div>
+                </div>
+
+                <div className="metric-card__value">
+                  {item.average.toFixed(2)} {item.unit}
+                </div>
+                <Text className="muted-label">Среднее значение</Text>
+
+                <div className="metric-card__footer">
+                  <div>
+                    <Text className="muted-label">Пик</Text>
+                    <div>{item.maximum.toFixed(2)} {item.unit}</div>
+                  </div>
+                  <div>
+                    <Text className="muted-label">Мин</Text>
+                    <div>{item.minimum.toFixed(2)} {item.unit}</div>
+                  </div>
+                  <div>
+                    <Text className="muted-label">Точек</Text>
+                    <div>{item.readings_count.toLocaleString('ru-RU')}</div>
+                  </div>
+                </div>
+              </Space>
+            </Card>
+          </Col>
+        );
+      })}
+    </Row>
   );
 };
 
