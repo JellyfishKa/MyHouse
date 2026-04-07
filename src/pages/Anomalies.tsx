@@ -77,6 +77,7 @@ const Anomalies = () => {
     return <Empty description="Нет выбранного объекта" />;
   }
 
+
   return (
     <Space direction="vertical" size={20} style={{ width: '100%' }}>
       <Card className="surface-card">
