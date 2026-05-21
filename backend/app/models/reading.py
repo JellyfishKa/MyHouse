@@ -186,3 +186,44 @@ class RulPrediction(BaseModel):
     rul_days: int
     status: str
     confidence: str
+
+
+# === ML SERVICE RESPONSE SCHEMAS ===
+
+class EquipmentHealthML(BaseModel):
+    equipment_id: str
+    score: float
+    grade: str
+    anomaly_rate: float
+    windows_checked: int
+
+
+class PredictionItem(BaseModel):
+    equipment_id: str
+    rul_days: int
+    failure_probability: float
+    status: str
+    confidence: str
+
+
+class RulML(BaseModel):
+    equipment_id: str
+    rul_days: int
+    status: str
+    confidence: str
+    failure_probability: float
+    features_snapshot: dict
+
+
+# === DEMO SCHEMAS ===
+
+class StressTestRequest(BaseModel):
+    object_id: UUID
+    equipment_id: Optional[UUID] = None
+    duration_seconds: int = Field(default=60, ge=10, le=300)
+
+
+class StressTestResponse(BaseModel):
+    status: str
+    equipment_id: UUID
+    duration_seconds: int

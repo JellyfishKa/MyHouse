@@ -124,7 +124,7 @@ export function useObjectSensors(objectId?: string) {
   });
 }
 
-export function useSummary(objectId?: string) {
+export function useSummary(objectId?: string, refetchInterval?: number | false) {
   return useQuery<SensorSummary[]>({
     queryKey: ['summary', objectId],
     queryFn: async () => {
@@ -132,6 +132,7 @@ export function useSummary(objectId?: string) {
       return data;
     },
     enabled: !!objectId,
+    refetchInterval: refetchInterval ?? false,
   });
 }
 
@@ -173,7 +174,7 @@ export function useMlHealth() {
   });
 }
 
-export function useHealthScore(objectId?: string) {
+export function useHealthScore(objectId?: string, refetchInterval?: number | false) {
   return useQuery<HealthScore>({
     queryKey: ['health-score', objectId],
     queryFn: async () => {
@@ -181,10 +182,11 @@ export function useHealthScore(objectId?: string) {
       return data;
     },
     enabled: !!objectId,
+    refetchInterval: refetchInterval ?? false,
   });
 }
 
-export function useRul(objectId?: string) {
+export function useRul(objectId?: string, refetchInterval?: number | false) {
   return useQuery<RulPrediction>({
     queryKey: ['rul', objectId],
     queryFn: async () => {
@@ -192,6 +194,7 @@ export function useRul(objectId?: string) {
       return data;
     },
     enabled: !!objectId,
+    refetchInterval: refetchInterval ?? false,
   });
 }
 
@@ -203,6 +206,27 @@ export function useEquipmentList(objectId?: string) {
       return data;
     },
     enabled: !!objectId,
+  });
+}
+
+export interface StressTestRequest {
+  object_id: string;
+  equipment_id?: string;
+  duration_seconds?: number;
+}
+
+export interface StressTestResponse {
+  status: string;
+  equipment_id: string;
+  duration_seconds: number;
+}
+
+export function useStressTest() {
+  return useMutation<StressTestResponse, Error, StressTestRequest>({
+    mutationFn: async (payload) => {
+      const { data } = await api.post('/demo/stress-test', payload);
+      return data;
+    },
   });
 }
 

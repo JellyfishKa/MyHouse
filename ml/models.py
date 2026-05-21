@@ -1,17 +1,32 @@
-import pandas as pd
+import os
+
+import joblib
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import IsolationForest
+
+MODEL_DIR = os.path.join(os.path.dirname(__file__), "saved_models")
+IF_PATH   = os.path.join(MODEL_DIR, "isolation_forest_v1.joblib")
 
 
 class MLModel:
     def __init__(self, contamination=0.005, window_size=1000, threshold=0.25):
-        self.model = IsolationForest(
-            contamination=contamination,
-            random_state=42
-        )
+        os.makedirs(MODEL_DIR, exist_ok=True)
         self.window_size = window_size
-        self.threshold = threshold
+        self.threshold   = threshold
         self.feature_cols = None
+
+        if os.path.exists(IF_PATH):
+            saved = joblib.load(IF_PATH)
+            self.model        = saved.get("clf", IsolationForest(contamination=contamination, random_state=42))
+            self.feature_cols = saved.get("feature_cols")
+        else:
+            self.model = IsolationForest(contamination=contamination, random_state=42)
+
+    def save(self):
+        os.makedirs(MODEL_DIR, exist_ok=True)
+        joblib.dump({"clf": self.model, "feature_cols": self.feature_cols}, IF_PATH)
+        print(f"[MLModel] Saved -> {IF_PATH}")
 
     def _data_preparation(self, data: pd.DataFrame) -> pd.DataFrame:
         features = []
@@ -36,6 +51,13 @@ class MLModel:
         X = pd.DataFrame(features)
         self.feature_cols = [col for col in X.columns if col != "start_time"]
 
+        return X
+
+    def fit(self, data: pd.DataFrame, save: bool = True):
+        X = self._data_preparation(data)
+        self.model.fit(X[self.feature_cols])
+        if save:
+            self.save()
         return X
 
     def fit_predict(self, data: pd.DataFrame):

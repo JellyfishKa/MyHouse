@@ -6,7 +6,8 @@ import urllib.request
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
-from app.models.reading import DetectRequest, DetectResponse, ServiceHealth
+from app.models.reading import (DetectRequest, DetectResponse,
+                                EquipmentHealthML, PredictionItem, RulML, ServiceHealth)
 
 router = APIRouter(prefix="/api/v1/ml", tags=["ML"])
 
@@ -61,3 +62,26 @@ async def run_detection(payload: DetectRequest):
         payload.model_dump(mode="json", exclude_none=True),
     )
     return DetectResponse(**result)
+
+
+@router.get("/equipment/{equipment_id}/health", response_model=EquipmentHealthML)
+async def equipment_health(equipment_id: str):
+    result = await _safe_request("GET", f"/api/v1/equipment/{equipment_id}/health")
+    return EquipmentHealthML(**result)
+
+
+@router.get("/predictions", response_model=list[PredictionItem])
+async def get_predictions(object_id: str | None = None, limit: int = 20):
+    params = f"?limit={limit}"
+    if object_id:
+        params += f"&object_id={object_id}"
+    result = await _safe_request("GET", f"/api/v1/predictions{params}")
+    if isinstance(result, list):
+        return [PredictionItem(**item) for item in result]
+    return []
+
+
+@router.post("/predict", response_model=RulML)
+async def predict_rul(equipment_id: str):
+    result = await _safe_request("POST", "/ml/predict", {"equipment_id": equipment_id})
+    return RulML(**result)

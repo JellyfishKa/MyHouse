@@ -20,6 +20,7 @@ const CHART_COLORS = ['#0f766e', '#f97316', '#2563eb', '#7c3aed', '#ea580c', '#0
 interface ConsumptionChartProps {
   objectItem?: MonitoringObject;
   sensors: ObjectSensor[];
+  refetchInterval?: number | false;
 }
 
 type ChartRow = Record<string, number | string | null>;
@@ -58,21 +59,24 @@ const generateMockData = (): ChartRow[] =>
     [MOCK_SENSOR_LABEL]: parseFloat((220 + Math.sin(i / 3) * 40 + Math.random() * 15).toFixed(2)),
   }));
 
-const ConsumptionChart = ({ objectItem, sensors }: ConsumptionChartProps) => {
+const ConsumptionChart = ({ objectItem, sensors, refetchInterval }: ConsumptionChartProps) => {
   const [selectedRange, setSelectedRange] = useState('day');
 
-  const { from, agg } = useMemo(() => {
-    const anchor = buildAnchorDate(objectItem);
-    return rangeToWindow(selectedRange, anchor);
-  }, [objectItem, selectedRange]);
+  // When polling is active use current time as anchor so new readings are always in window
+  const to = useMemo(
+    () => (refetchInterval ? new Date() : buildAnchorDate(objectItem)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [objectItem, refetchInterval],
+  );
 
-  const to = useMemo(() => buildAnchorDate(objectItem), [objectItem]);
+  const { from, agg } = useMemo(() => rangeToWindow(selectedRange, to), [selectedRange, to]);
 
   const telemetryQueries = useQueries({
     queries: sensors.map((sensor) => ({
-      queryKey: ['telemetry', sensor.id, from.toISOString(), to.toISOString(), agg],
-      queryFn: () => fetchTelemetry(sensor.id, from.toISOString(), to.toISOString(), agg),
+      queryKey: ['telemetry', sensor.id, from.toISOString(), agg, refetchInterval ? 'live' : 'static'],
+      queryFn: () => fetchTelemetry(sensor.id, from.toISOString(), new Date().toISOString(), agg),
       enabled: !!sensor.id,
+      refetchInterval: refetchInterval ?? false,
     })),
   });
 

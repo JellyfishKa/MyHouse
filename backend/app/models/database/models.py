@@ -207,10 +207,12 @@ class Equipment(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     type: Mapped[EquipmentType] = mapped_column(
-        ENUM(EquipmentType, name="equipment_type_enum", create_type=True), nullable=False
+        ENUM(EquipmentType, name="equipment_type_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]), nullable=False
     )
     status: Mapped[EquipmentStatus] = mapped_column(
-        ENUM(EquipmentStatus, name="equipment_status_enum", create_type=True),
+        ENUM(EquipmentStatus, name="equipment_status_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]),
         default=EquipmentStatus.ONLINE,
         server_default="online",
     )
@@ -256,7 +258,8 @@ class Alert(Base):
         ForeignKey("equipment.id", ondelete="CASCADE"), nullable=False, index=True
     )
     severity: Mapped[SeverityLevel] = mapped_column(
-        ENUM(SeverityLevel, name="severity_level_enum", create_type=False), nullable=False
+        ENUM(SeverityLevel, name="severity_level_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]), nullable=False
     )
     message: Mapped[str] = mapped_column(String, nullable=False)
     triggered_at: Mapped[datetime] = mapped_column(

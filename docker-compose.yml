@@ -54,6 +54,7 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-myhouse}
+      ML_SERVICE_URL: http://ml:8002
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     networks:
@@ -78,6 +79,7 @@ services:
       - "8002:8002"
     volumes:
       - ml_data:/data/ml_results
+      - ./ml/saved_models:/app/saved_models
     depends_on:
       postgres:
         condition: service_healthy

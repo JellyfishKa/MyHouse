@@ -64,6 +64,34 @@ def fetch_readings_by_object(object_id: str, days: int = 7) -> pd.DataFrame:
         conn.close()
 
 
+def fetch_equipment_readings(equipment_id: str, limit: int = 2000) -> pd.DataFrame:
+    """Fetch recent readings from equipment_readings table."""
+    conn = get_connection()
+    try:
+        query = """
+            SELECT time, equipment_id, current_a, voltage_v, power_kw
+            FROM equipment_readings
+            WHERE equipment_id = %s
+            ORDER BY time DESC
+            LIMIT %s
+        """
+        df = pd.read_sql(query, conn, params=(equipment_id, limit))
+        return df.sort_values("time").reset_index(drop=True)
+    finally:
+        conn.close()
+
+
+def fetch_equipment_ids_by_object(object_id: str) -> list[str]:
+    """Return equipment IDs for a given object."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM equipment WHERE object_id = %s", (object_id,))
+            return [str(row[0]) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def insert_anomalies(anomalies: list[dict]) -> int:
     """Insert anomaly records into the anomalies table."""
     if not anomalies:
