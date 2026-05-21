@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import { Alert, Card, Empty, Segmented, Spin, Typography } from 'antd';
+import { Alert, Card, Segmented, Spin, Typography } from 'antd';
 import { useQueries } from '@tanstack/react-query';
 import {
   CartesianGrid,
@@ -50,9 +50,16 @@ const rangeToWindow = (range: string, anchor: Date) => {
 const buildAnchorDate = (objectItem?: MonitoringObject) =>
   objectItem?.last_reading_at ? new Date(objectItem.last_reading_at) : new Date();
 
+const MOCK_SENSOR_LABEL = 'Моковые данные';
+
+const generateMockData = (): ChartRow[] =>
+  Array.from({ length: 24 }, (_, i) => ({
+    time: new Date(Date.now() - (23 - i) * 3_600_000).toISOString(),
+    [MOCK_SENSOR_LABEL]: parseFloat((220 + Math.sin(i / 3) * 40 + Math.random() * 15).toFixed(2)),
+  }));
+
 const ConsumptionChart = ({ objectItem, sensors }: ConsumptionChartProps) => {
-  const defaultRange = sensors.length > 4 ? 'day' : 'hour';
-  const [selectedRange, setSelectedRange] = useState(defaultRange);
+  const [selectedRange, setSelectedRange] = useState('day');
 
   const { from, agg } = useMemo(() => {
     const anchor = buildAnchorDate(objectItem);
@@ -97,10 +104,6 @@ const ConsumptionChart = ({ objectItem, sensors }: ConsumptionChartProps) => {
     );
   }, [sensors, telemetryQueries]);
 
-  if (!sensors.length) {
-    return <Empty description="У выбранного объекта нет зарегистрированных сенсоров" />;
-  }
-
   if (isLoading) {
     return (
       <div className="chart-loading">
@@ -113,14 +116,13 @@ const ConsumptionChart = ({ objectItem, sensors }: ConsumptionChartProps) => {
     return <Alert type="error" message="Не удалось загрузить временной ряд" showIcon />;
   }
 
-  if (!chartData.length) {
-    return <Empty description="В выбранном временном окне нет телеметрии" />;
-  }
+  const useMock = !sensors.length || !chartData.length;
+  const displayData = useMock ? generateMockData() : chartData;
 
   return (
     <Card
       className="surface-card"
-      title="Временной ряд по сенсорам"
+      title="Потребление за 24ч"
       extra={
         <Segmented
           options={RANGE_OPTIONS}
@@ -131,12 +133,14 @@ const ConsumptionChart = ({ objectItem, sensors }: ConsumptionChartProps) => {
     >
       <div className="chart-card__meta">
         <Text type="secondary">
-          Показан интервал до {to.toLocaleString('ru-RU')} c агрегацией {agg}
+          {useMock
+            ? 'Демо-данные (реальные сенсоры не подключены)'
+            : `Показан интервал до ${to.toLocaleString('ru-RU')} c агрегацией ${agg}`}
         </Text>
       </div>
       <div className="chart-shell">
         <ResponsiveContainer>
-          <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+          <LineChart data={displayData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
             <CartesianGrid stroke="#d7e3e0" strokeDasharray="3 3" />
             <XAxis
               dataKey="time"
@@ -158,18 +162,31 @@ const ConsumptionChart = ({ objectItem, sensors }: ConsumptionChartProps) => {
               }
             />
             <Legend verticalAlign="top" />
-            {sensors.map((sensor, index) => (
+            {useMock ? (
               <Line
-                key={sensor.id}
                 type="monotone"
-                dataKey={sensor.label}
-                stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                dataKey={MOCK_SENSOR_LABEL}
+                stroke={CHART_COLORS[0]}
                 strokeWidth={2.2}
+                strokeDasharray="6 3"
                 dot={false}
                 activeDot={{ r: 4 }}
                 isAnimationActive={false}
               />
-            ))}
+            ) : (
+              sensors.map((sensor, index) => (
+                <Line
+                  key={sensor.id}
+                  type="monotone"
+                  dataKey={sensor.label}
+                  stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                  strokeWidth={2.2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  isAnimationActive={false}
+                />
+              ))
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>

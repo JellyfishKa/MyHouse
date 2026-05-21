@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ConfigProvider, Layout, Menu, Select, Space, Spin, Tag, Typography } from 'antd';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { DashboardOutlined, DeploymentUnitOutlined, WarningOutlined } from '@ant-design/icons';
+import { DashboardOutlined, DeploymentUnitOutlined, ToolOutlined } from '@ant-design/icons';
 import { useMlHealth, useObjects, type MlHealth, type MonitoringObject } from '../api/hooks';
 
 const { Header, Content, Sider } = Layout;
@@ -11,12 +11,12 @@ const items = [
   {
     key: '/',
     icon: <DashboardOutlined />,
-    label: <Link to="/">Обзор</Link>,
+    label: <Link to="/">Дашборд</Link>,
   },
   {
-    key: '/anomalies',
-    icon: <WarningOutlined />,
-    label: <Link to="/anomalies">Аномалии</Link>,
+    key: '/equipment',
+    icon: <ToolOutlined />,
+    label: <Link to="/equipment">Оборудование</Link>,
   },
 ];
 

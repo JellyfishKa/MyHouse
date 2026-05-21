@@ -109,3 +109,80 @@ class ServiceHealth(BaseModel):
     status: str
     service: str
     detail: Optional[str] = None
+
+
+# === EQUIPMENT SCHEMAS ===
+
+class EquipmentCreate(BaseModel):
+    object_id: UUID
+    name: str
+    type: str
+    status: str = "online"
+    installed_at: Optional[datetime] = None
+    meta_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class EquipmentOut(BaseModel):
+    id: UUID
+    object_id: UUID
+    name: str
+    type: str
+    status: str
+    installed_at: Optional[datetime] = None
+    meta_data: Optional[dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class EquipmentReadingCreate(BaseModel):
+    time: datetime
+    current_a: Optional[float] = None
+    voltage_v: Optional[float] = None
+    power_kw: Optional[float] = None
+
+
+class EquipmentReadingBatch(BaseModel):
+    readings: List[EquipmentReadingCreate]
+
+
+class EquipmentReadingOut(BaseModel):
+    time: datetime
+    equipment_id: UUID
+    current_a: Optional[float] = None
+    voltage_v: Optional[float] = None
+    power_kw: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AlertOut(BaseModel):
+    id: UUID
+    equipment_id: UUID
+    severity: SeverityLevel
+    message: str
+    triggered_at: datetime
+    acknowledged: bool
+
+    class Config:
+        from_attributes = True
+
+
+# === ANALYTICS SCHEMAS ===
+
+class HealthScore(BaseModel):
+    object_id: UUID
+    score: float
+    grade: str
+    critical: int
+    high: int
+    medium: int
+    low: int
+
+
+class RulPrediction(BaseModel):
+    object_id: UUID
+    rul_days: int
+    status: str
+    confidence: str

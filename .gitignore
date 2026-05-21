@@ -73,3 +73,5 @@ out/
 coverage/
 /ml/__pycache__
 /data/Motor Monitoring Dataset
+/.omc
+/docs/.omc

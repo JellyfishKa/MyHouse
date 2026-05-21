@@ -64,6 +64,33 @@ export interface DetectResponse {
   anomalies_inserted: number;
 }
 
+export interface HealthScore {
+  object_id: string;
+  score: number;
+  grade: string;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+export interface RulPrediction {
+  object_id: string;
+  rul_days: number;
+  status: 'ok' | 'warning' | 'critical';
+  confidence: string;
+}
+
+export interface EquipmentItem {
+  id: string;
+  object_id: string;
+  name: string;
+  type: 'server' | 'conditioner' | 'ups' | 'switch';
+  status: 'online' | 'offline' | 'maintenance';
+  installed_at?: string | null;
+  meta_data?: Record<string, unknown> | null;
+}
+
 export async function fetchTelemetry(
   sensorId: string,
   from: string,
@@ -143,6 +170,39 @@ export function useMlHealth() {
     },
     retry: false,
     refetchInterval: 30000,
+  });
+}
+
+export function useHealthScore(objectId?: string) {
+  return useQuery<HealthScore>({
+    queryKey: ['health-score', objectId],
+    queryFn: async () => {
+      const { data } = await api.get(`/analytics/health/${objectId!}`);
+      return data;
+    },
+    enabled: !!objectId,
+  });
+}
+
+export function useRul(objectId?: string) {
+  return useQuery<RulPrediction>({
+    queryKey: ['rul', objectId],
+    queryFn: async () => {
+      const { data } = await api.get(`/analytics/rul/${objectId!}`);
+      return data;
+    },
+    enabled: !!objectId,
+  });
+}
+
+export function useEquipmentList(objectId?: string) {
+  return useQuery<EquipmentItem[]>({
+    queryKey: ['equipment', objectId],
+    queryFn: async () => {
+      const { data } = await api.get('/equipment', { params: { object_id: objectId! } });
+      return data;
+    },
+    enabled: !!objectId,
   });
 }
 

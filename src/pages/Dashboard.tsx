@@ -15,11 +15,11 @@ import {
 } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
-import { AimOutlined, ExperimentOutlined, RadarChartOutlined } from '@ant-design/icons';
+import { ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import ConsumptionChart from '../components/ConsumptionChart';
 import type { AppLayoutContextValue } from '../components/MainLayout';
 import SummaryCards from '../components/SummaryCards';
-import { useObjectSensors, useSummary, useTriggerDetection } from '../api/hooks';
+import { useHealthScore, useObjectSensors, useRul, useSummary, useTriggerDetection } from '../api/hooks';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -38,6 +38,8 @@ const Dashboard = () => {
   const { data: summary = [], isLoading: summaryLoading, error: summaryError } =
     useSummary(selectedObjectId);
   const detectMutation = useTriggerDetection();
+  const { data: healthScore } = useHealthScore(selectedObjectId);
+  const { data: rul } = useRul(selectedObjectId);
   const [messageApi, contextHolder] = message.useMessage();
 
   const sourceLabel = useMemo(() => {
@@ -115,44 +117,47 @@ const Dashboard = () => {
       </Card>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} md={12} xl={6}>
+        <Col xs={24} md={8}>
           <Card className="surface-card stat-card">
             <Statistic
-              title="Сенсоры"
-              value={selectedObject.sensor_count}
-              prefix={<RadarChartOutlined />}
+              title="Health Score"
+              value={healthScore ? `${healthScore.score} (${healthScore.grade})` : '—'}
+              valueStyle={{
+                color: healthScore
+                  ? healthScore.grade === 'A' ? '#15803d'
+                  : healthScore.grade === 'B' ? '#0f766e'
+                  : healthScore.grade === 'C' ? '#d97706'
+                  : '#d4380d'
+                  : undefined,
+              }}
             />
           </Card>
         </Col>
-        <Col xs={24} md={12} xl={6}>
+        <Col xs={24} md={8}>
           <Card className="surface-card stat-card">
             <Statistic
-              title="Записей телеметрии"
-              value={selectedObject.reading_count}
-              formatter={(value) => Number(value).toLocaleString('ru-RU')}
-              prefix={<AimOutlined />}
+              title="Потребление"
+              value={summary[0]?.average != null ? summary[0].average.toFixed(2) : '—'}
+              suffix={summary[0]?.unit ?? 'кВт'}
+              prefix={<ThunderboltOutlined />}
             />
           </Card>
         </Col>
-        <Col xs={24} md={12} xl={6}>
+        <Col xs={24} md={8}>
           <Card className="surface-card stat-card">
             <Statistic
-              title="Аномалий"
-              value={selectedObject.anomaly_count}
-              prefix={<ExperimentOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} md={12} xl={6}>
-          <Card className="surface-card stat-card">
-            <Statistic
-              title="Последняя точка"
-              value={selectedObject.last_reading_at ? 'Есть данные' : 'Нет данных'}
+              title="Прогноз (RUL)"
+              value={rul ? `${rul.rul_days} дн.` : '—'}
+              valueStyle={{
+                color: rul
+                  ? rul.status === 'ok' ? '#15803d'
+                  : rul.status === 'warning' ? '#d97706'
+                  : '#d4380d'
+                  : undefined,
+              }}
             />
             <Text type="secondary">
-              {selectedObject.last_reading_at
-                ? new Date(selectedObject.last_reading_at).toLocaleString('ru-RU')
-                : 'Телеметрия ещё не импортирована'}
+              {rul ? `Статус: ${rul.status === 'ok' ? 'норма' : rul.status === 'warning' ? 'предупреждение' : 'критично'}` : 'Загрузка...'}
             </Text>
           </Card>
         </Col>

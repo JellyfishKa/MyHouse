@@ -1,7 +1,7 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import MainLayout from './components/MainLayout';
 import Dashboard from './pages/Dashboard';
-import Anomalies from './pages/Anomalies';
+import Equipment from './pages/Equipment';
 
 const router = createBrowserRouter([
   {
@@ -13,8 +13,8 @@ const router = createBrowserRouter([
         element: <Dashboard />,
       },
       {
-        path: 'anomalies',
-        element: <Anomalies />,
+        path: 'equipment',
+        element: <Equipment />,
       },
     ],
   },
