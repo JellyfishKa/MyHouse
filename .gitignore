@@ -71,3 +71,8 @@ out/
 
 # Отчёты о покрытии
 coverage/
+/ml/__pycache__
+/data/Motor Monitoring Dataset
+/.omc
+/docs/.omc
+/data/skab

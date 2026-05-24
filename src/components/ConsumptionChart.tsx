@@ -1,154 +1,200 @@
-import { memo, useMemo } from 'react';
-import { Skeleton, Alert, Empty, Tooltip as AntdTooltip, Tag } from 'antd';
+import { memo, useMemo, useState } from 'react';
+import { Alert, Card, Segmented, Spin, Typography } from 'antd';
+import { useQueries } from '@tanstack/react-query';
 import {
-  AreaChart,
-  Area,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  ReferenceDot,
 } from 'recharts';
-import { useTelemetry, useAnomalies, type AnomalyRecord } from '../api/hooks';
+import { fetchTelemetry, type AggregatedReading, type MonitoringObject, type ObjectSensor } from '../api/hooks';
 
-// ID сенсоров из seed.py
-const SENSORS = [
-  { id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', label: 'Серверы', color: '#5D3C97' },
-  { id: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', label: 'Охлаждение', color: '#5B72DA' },
-  { id: 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', label: 'ИБП', color: '#8D77B7' },
-  { id: 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', label: 'Освещение', color: '#BDB3D8' },
+const { Text } = Typography;
+
+const CHART_COLORS = ['#0f766e', '#f97316', '#2563eb', '#7c3aed', '#ea580c', '#0891b2'];
+
+interface ConsumptionChartProps {
+  objectItem?: MonitoringObject;
+  sensors: ObjectSensor[];
+  refetchInterval?: number | false;
+}
+
+type ChartRow = Record<string, number | string | null>;
+
+const RANGE_OPTIONS = [
+  { label: '1 час', value: 'hour' },
+  { label: '1 день', value: 'day' },
+  { label: '7 дней', value: 'week' },
 ];
 
-const categoryLabels: Record<string, string> = {
-    servers: 'Серверы',
-    cooling: 'Охлаждение',
-    ups: 'ИБП',
-    lighting: 'Освещение',
+const rangeToWindow = (range: string, anchor: Date) => {
+  const from = new Date(anchor);
+
+  if (range === 'hour') {
+    from.setHours(anchor.getHours() - 1);
+    return { from, agg: 'raw' as const };
+  }
+
+  if (range === 'day') {
+    from.setDate(anchor.getDate() - 1);
+    return { from, agg: 'hour' as const };
+  }
+
+  from.setDate(anchor.getDate() - 7);
+  return { from, agg: 'day' as const };
 };
 
-const severityConfig: Record<string, { color: string; label: string }> = {
-    low: { color: 'green', label: 'Низкий' },
-    medium: { color: 'gold', label: 'Средний' },
-    high: { color: 'orange', label: 'Высокий' },
-    critical: { color: 'red', label: 'Критический' },
-};
+const buildAnchorDate = (objectItem?: MonitoringObject) =>
+  objectItem?.last_reading_at ? new Date(objectItem.last_reading_at) : new Date();
 
-const AnomalyDot = (props: any) => {
-    const { cx, cy, payload } = props;
-    const an = payload as AnomalyRecord;
+const MOCK_SENSOR_LABEL = 'Моковые данные';
 
-    const title = (
-        <div>
-            <span>{categoryLabels[an.category] || an.category}</span><br/>
-            <span>Значение: {an.value.toFixed(2)}</span><br/>
-            <Tag color={severityConfig[an.severity]?.color}>{severityConfig[an.severity]?.label}</Tag>
-        </div>
-    )
+const generateMockData = (): ChartRow[] =>
+  Array.from({ length: 24 }, (_, i) => ({
+    time: new Date(Date.now() - (23 - i) * 3_600_000).toISOString(),
+    [MOCK_SENSOR_LABEL]: parseFloat((220 + Math.sin(i / 3) * 40 + Math.random() * 15).toFixed(2)),
+  }));
 
-    return (
-        <AntdTooltip title={title}>
-            <circle cx={cx} cy={cy} r={5} stroke="red" strokeWidth={2} fill="white" />
-        </AntdTooltip>
-    );
-};
+const ConsumptionChart = ({ objectItem, sensors, refetchInterval }: ConsumptionChartProps) => {
+  const [selectedRange, setSelectedRange] = useState('day');
 
+  // When polling is active use current time as anchor so new readings are always in window
+  const to = useMemo(
+    () => (refetchInterval ? new Date() : buildAnchorDate(objectItem)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [objectItem, refetchInterval],
+  );
 
-const ConsumptionChart = () => {
-  const now = useMemo(() => new Date().toISOString(), []);
-  const weekAgo = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString();
-  }, []);
+  const { from, agg } = useMemo(() => rangeToWindow(selectedRange, to), [selectedRange, to]);
 
-  const telemetryQueries = SENSORS.map((s) => useTelemetry(s.id, weekAgo, now, 'hour'));
-  const anomaliesQuery = useAnomalies();
+  const telemetryQueries = useQueries({
+    queries: sensors.map((sensor) => ({
+      queryKey: ['telemetry', sensor.id, from.toISOString(), agg, refetchInterval ? 'live' : 'static'],
+      queryFn: () => fetchTelemetry(sensor.id, from.toISOString(), new Date().toISOString(), agg),
+      enabled: !!sensor.id,
+      refetchInterval: refetchInterval ?? false,
+    })),
+  });
 
-  const isLoading = telemetryQueries.some((q) => q.isLoading) || anomaliesQuery.isLoading;
-  const hasError = telemetryQueries.some((q) => q.error) || anomaliesQuery.error;
+  const isLoading = telemetryQueries.some((query) => query.isLoading);
+  const hasError = telemetryQueries.some((query) => query.error);
 
   const chartData = useMemo(() => {
-    const timeMap = new Map<string, Record<string, number | string>>();
+    const timeMap = new Map<string, ChartRow>();
 
-    SENSORS.forEach((sensor, idx) => {
-      const readings = telemetryQueries[idx].data;
-      if (!readings) return;
-      readings.forEach((r) => {
-        const timeKey = r.time;
-        if (!timeMap.has(timeKey)) {
-          timeMap.set(timeKey, { time: timeKey });
+    sensors.forEach((sensor, sensorIndex) => {
+      const readings = telemetryQueries[sensorIndex].data as AggregatedReading[] | undefined;
+      if (!readings) {
+        return;
+      }
+
+      readings.forEach((reading) => {
+        if (!timeMap.has(reading.time)) {
+          timeMap.set(reading.time, { time: reading.time });
         }
-        const entry = timeMap.get(timeKey)!;
-        entry[sensor.label] = r.value ?? 0;
+
+        const row = timeMap.get(reading.time)!;
+        row[sensor.label] = reading.value;
       });
     });
 
     return Array.from(timeMap.values()).sort(
-      (a, b) => new Date(a.time as string).getTime() - new Date(b.time as string).getTime(),
+      (left, right) =>
+        new Date(String(left.time)).getTime() - new Date(String(right.time)).getTime(),
     );
-  }, [telemetryQueries.map((q) => q.data)]);
+  }, [sensors, telemetryQueries]);
 
   if (isLoading) {
     return (
-        <div style={{ width: '100%', height: 400, paddingTop: 40 }}>
-            <Skeleton active />
-        </div>
+      <div className="chart-loading">
+        <Spin size="large" />
+      </div>
     );
   }
 
   if (hasError) {
-    return <Alert type="error" message="Ошибка загрузки графика" showIcon />;
+    return <Alert type="error" message="Не удалось загрузить временной ряд" showIcon />;
   }
 
-  if (chartData.length === 0) {
-    return <Empty description="Нет данных для отображения" />;
-  }
+  const useMock = !sensors.length || !chartData.length;
+  const displayData = useMock ? generateMockData() : chartData;
 
   return (
-    <div style={{ width: '100%', height: 400 }}>
-      <ResponsiveContainer>
-        <AreaChart
-          data={chartData}
-          margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis
-            dataKey="time"
-            tickFormatter={(time) => new Date(time).toLocaleDateString('ru-RU')}
-            type="category"
-            allowDuplicatedCategory
-          />
-          <YAxis />
-          <Tooltip
-            labelFormatter={(label) =>
-              new Date(label).toLocaleString('ru-RU')
-            }
-          />
-          <Legend verticalAlign="bottom" height={36} />
-          {SENSORS.map((sensor) => (
-            <Area
-              key={sensor.id}
-              type="monotone"
-              dataKey={sensor.label}
-              stroke={sensor.color}
-              fill={sensor.color}
-              fillOpacity={0.6}
+    <Card
+      className="surface-card"
+      title="Потребление за 24ч"
+      extra={
+        <Segmented
+          options={RANGE_OPTIONS}
+          value={selectedRange}
+          onChange={(value) => setSelectedRange(String(value))}
+        />
+      }
+    >
+      <div className="chart-card__meta">
+        <Text type="secondary">
+          {useMock
+            ? 'Демо-данные (реальные сенсоры не подключены)'
+            : `Показан интервал до ${to.toLocaleString('ru-RU')} c агрегацией ${agg}`}
+        </Text>
+      </div>
+      <div className="chart-shell">
+        <ResponsiveContainer>
+          <LineChart data={displayData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+            <CartesianGrid stroke="#d7e3e0" strokeDasharray="3 3" />
+            <XAxis
+              dataKey="time"
+              minTickGap={28}
+              tickFormatter={(value) =>
+                new Date(value).toLocaleString('ru-RU', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              }
             />
-          ))}
-          {anomaliesQuery.data?.map(an => (
-             <ReferenceDot
-                key={an.id}
-                x={an.time}
-                y={an.value}
-                ifOverflow="extendDomain"
-                shape={<AnomalyDot />}
-             />
-          ))}
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
+            <YAxis />
+            <Tooltip
+              labelFormatter={(label) => new Date(label).toLocaleString('ru-RU')}
+              formatter={(value) =>
+                typeof value === 'number' ? value.toFixed(3) : String(value)
+              }
+            />
+            <Legend verticalAlign="top" />
+            {useMock ? (
+              <Line
+                type="monotone"
+                dataKey={MOCK_SENSOR_LABEL}
+                stroke={CHART_COLORS[0]}
+                strokeWidth={2.2}
+                strokeDasharray="6 3"
+                dot={false}
+                activeDot={{ r: 4 }}
+                isAnimationActive={false}
+              />
+            ) : (
+              sensors.map((sensor, index) => (
+                <Line
+                  key={sensor.id}
+                  type="monotone"
+                  dataKey={sensor.label}
+                  stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                  strokeWidth={2.2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  isAnimationActive={false}
+                />
+              ))
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
   );
 };
 

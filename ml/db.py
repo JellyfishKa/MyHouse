@@ -27,10 +27,14 @@ def fetch_readings(sensor_id: str, days: int = 7) -> pd.DataFrame:
             SELECT time, value
             FROM readings
             WHERE sensor_id = %s
-              AND time >= NOW() - INTERVAL '%s days'
+              AND time >= (
+                  SELECT COALESCE(MAX(time), NOW()) - (%s * INTERVAL '1 day')
+                  FROM readings
+                  WHERE sensor_id = %s
+              )
             ORDER BY time ASC
         """
-        df = pd.read_sql(query, conn, params=(sensor_id, days))
+        df = pd.read_sql(query, conn, params=(sensor_id, days, sensor_id))
         return df
     finally:
         conn.close()
@@ -46,11 +50,44 @@ def fetch_readings_by_object(object_id: str, days: int = 7) -> pd.DataFrame:
             FROM readings r
             JOIN sensors s ON s.id = r.sensor_id
             WHERE s.object_id = %s
-              AND r.time >= NOW() - INTERVAL '%s days'
+              AND r.time >= (
+                  SELECT COALESCE(MAX(r2.time), NOW()) - (%s * INTERVAL '1 day')
+                  FROM readings r2
+                  JOIN sensors s2 ON s2.id = r2.sensor_id
+                  WHERE s2.object_id = %s
+              )
             ORDER BY r.time ASC
         """
-        df = pd.read_sql(query, conn, params=(object_id, days))
+        df = pd.read_sql(query, conn, params=(object_id, days, object_id))
         return df
+    finally:
+        conn.close()
+
+
+def fetch_equipment_readings(equipment_id: str, limit: int = 2000) -> pd.DataFrame:
+    """Fetch recent readings from equipment_readings table."""
+    conn = get_connection()
+    try:
+        query = """
+            SELECT time, equipment_id, current_a, voltage_v, power_kw
+            FROM equipment_readings
+            WHERE equipment_id = %s
+            ORDER BY time DESC
+            LIMIT %s
+        """
+        df = pd.read_sql(query, conn, params=(equipment_id, limit))
+        return df.sort_values("time").reset_index(drop=True)
+    finally:
+        conn.close()
+
+
+def fetch_equipment_ids_by_object(object_id: str) -> list[str]:
+    """Return equipment IDs for a given object."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM equipment WHERE object_id = %s", (object_id,))
+            return [str(row[0]) for row in cur.fetchall()]
     finally:
         conn.close()
 

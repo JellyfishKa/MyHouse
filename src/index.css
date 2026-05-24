@@ -1,115 +1,227 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  font-family: Aptos, 'Segoe UI', 'Trebuchet MS', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #16302c;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 30%),
+    radial-gradient(circle at top right, rgba(249, 115, 22, 0.12), transparent 28%),
+    linear-gradient(180deg, #edf5f4 0%, #f7faf9 42%, #eef4f2 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+* {
   box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100vh;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+a {
+  color: inherit;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+#root {
+  min-height: 100vh;
+}
+
+.shell-layout {
+  min-height: 100vh;
+  background: transparent;
+}
+
+.shell-sidebar {
+  background:
+    linear-gradient(180deg, #0b3b37 0%, #0f766e 52%, #0d5954 100%) !important;
+  padding: 18px 12px;
+  box-shadow: 20px 0 48px rgba(9, 35, 33, 0.12);
+}
+
+.shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 10px 24px;
+}
+
+.shell-brand__mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: #0b3b37;
+  background: linear-gradient(135deg, #dff7f2 0%, #f5c692 100%);
+}
+
+.shell-menu {
+  background: transparent !important;
+  border-inline-end: none !important;
+}
+
+.shell-menu .ant-menu-item {
+  margin-inline: 0 !important;
+  margin-block: 8px !important;
+  border-radius: 14px !important;
+}
+
+.shell-menu .ant-menu-item-selected {
+  background: rgba(240, 255, 252, 0.18) !important;
+}
+
+.shell-header {
+  height: auto !important;
+  padding: 28px 32px !important;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: transparent !important;
+}
+
+.shell-content {
+  padding: 0 24px 24px;
+}
+
+.shell-title,
+.page-title {
+  margin: 0 !important;
+  color: #102b27 !important;
+}
+
+.eyebrow,
+.muted-label {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: #5f7c75 !important;
+}
+
+.page-subtitle {
+  max-width: 760px;
+  margin: 12px 0 0 !important;
+  color: #47615b;
+}
+
+.hero-card,
+.surface-card,
+.metric-card {
+  border: 1px solid rgba(153, 179, 173, 0.32);
+  box-shadow: 0 18px 45px rgba(17, 45, 42, 0.08);
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(10px);
+}
+
+.hero-card {
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, 0.95) 0%, rgba(15, 118, 110, 0.86) 52%, rgba(13, 89, 84, 0.93) 100%) !important;
+}
+
+.hero-card .ant-card-body {
+  padding: 28px !important;
+}
+
+.hero-card__content {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.hero-card .page-title,
+.hero-card .page-subtitle,
+.hero-card .eyebrow,
+.hero-card .ant-typography {
+  color: #f4fbf9 !important;
+}
+
+.stat-card .ant-statistic {
+  min-height: 100%;
+}
+
+.metric-card .ant-card-body {
+  padding: 20px !important;
+}
+
+.metric-card__header {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.metric-card__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  color: #0f766e;
+  background: rgba(15, 118, 110, 0.12);
+}
+
+.metric-card__value {
+  font-size: 30px;
+  font-weight: 700;
+  color: #112d29;
+}
+
+.metric-card__footer {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(194, 213, 208, 0.75);
+}
+
+.chart-shell {
+  width: 100%;
+  height: 420px;
+}
+
+.chart-card__meta {
+  margin-bottom: 16px;
+}
+
+.chart-loading {
+  height: 420px;
+  display: grid;
+  place-items: center;
+}
+
+.object-select {
+  min-width: 280px;
+}
+
+@media (max-width: 992px) {
+  .shell-header {
+    padding: 24px 20px !important;
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+  .shell-content {
+    padding: 0 16px 16px;
   }
-}
-p {
-  margin: 0;
-}
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
+  .metric-card__footer {
+    grid-template-columns: 1fr;
+  }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
-}
-
-.ant-layout-sider {
-  transition: all 0.3s cubic-bezier(0.2, 0, 0, 1) !important;
+  .object-select {
+    width: 100%;
+  }
 }

@@ -41,37 +41,29 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Node.js backend приложение
+  # FastAPI backend
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: myhouse-backend
     environment:
-      NODE_ENV: ${NODE_ENV:-development}
       PORT: ${BACKEND_PORT:-8000}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-myhouse}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis}
+      ML_SERVICE_URL: http://ml:8002
     ports:
       - "${BACKEND_PORT:-8000}:8000"
-      - "8001:8001"
     networks:
       - myhouse-network
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     volumes:
       - ./backend:/app
-      - /app/node_modules
-      - ml_data:/app/ml_results
     restart: unless-stopped
 
   ml:
@@ -87,6 +79,7 @@ services:
       - "8002:8002"
     volumes:
       - ml_data:/data/ml_results
+      - ./ml/saved_models:/app/saved_models
     depends_on:
       postgres:
         condition: service_healthy

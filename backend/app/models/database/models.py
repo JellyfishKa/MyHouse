@@ -128,6 +128,7 @@ class Sensor(Base):
         ),
         nullable=False
     )
+    label: Mapped[str] = mapped_column(String, nullable=False)
     unit: Mapped[str] = mapped_column(
         String,
         default="кВт/ч",
@@ -177,4 +178,105 @@ event.listen(
     Reading.__table__,
     "after_create",
     DDL(HYPERTABLE_SQL)
+)
+
+
+# === EQUIPMENT MODELS ===
+
+class EquipmentType(str, enum.Enum):
+    SERVER = "server"
+    CONDITIONER = "conditioner"
+    UPS = "ups"
+    SWITCH = "switch"
+
+
+class EquipmentStatus(str, enum.Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    MAINTENANCE = "maintenance"
+
+
+class Equipment(Base):
+    __tablename__ = "equipment"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("objects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    type: Mapped[EquipmentType] = mapped_column(
+        ENUM(EquipmentType, name="equipment_type_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]), nullable=False
+    )
+    status: Mapped[EquipmentStatus] = mapped_column(
+        ENUM(EquipmentStatus, name="equipment_status_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]),
+        default=EquipmentStatus.ONLINE,
+        server_default="online",
+    )
+    installed_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=True, default=dict)
+
+    eq_readings: Mapped[list["EquipmentReading"]] = relationship(
+        "EquipmentReading", back_populates="equipment", cascade="all, delete-orphan"
+    )
+    alerts: Mapped[list["Alert"]] = relationship(
+        "Alert", back_populates="equipment", cascade="all, delete-orphan"
+    )
+
+
+class EquipmentReading(Base):
+    __tablename__ = "equipment_readings"
+
+    time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), primary_key=True, default=func.now()
+    )
+    equipment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("equipment.id", ondelete="CASCADE"), primary_key=True
+    )
+    current_a: Mapped[float | None] = mapped_column(Float, nullable=True)
+    voltage_v: Mapped[float | None] = mapped_column(Float, nullable=True)
+    power_kw: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    equipment: Mapped["Equipment"] = relationship("Equipment", back_populates="eq_readings")
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    equipment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("equipment.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    severity: Mapped[SeverityLevel] = mapped_column(
+        ENUM(SeverityLevel, name="severity_level_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]), nullable=False
+    )
+    message: Mapped[str] = mapped_column(String, nullable=False)
+    triggered_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), index=True
+    )
+    acknowledged: Mapped[bool] = mapped_column(default=False, server_default="false")
+
+    equipment: Mapped["Equipment"] = relationship("Equipment", back_populates="alerts")
+
+
+EQUIPMENT_READING_HYPERTABLE_SQL = (
+    "SELECT create_hypertable('equipment_readings', by_range('time'), "
+    "if_not_exists => TRUE);"
+)
+
+event.listen(
+    EquipmentReading.__table__,
+    "after_create",
+    DDL(EQUIPMENT_READING_HYPERTABLE_SQL)
 )

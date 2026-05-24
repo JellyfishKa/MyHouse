@@ -13,8 +13,10 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from db import fetch_readings, fetch_readings_by_object, insert_anomalies
+from db import (fetch_equipment_ids_by_object, fetch_equipment_readings,
+                fetch_readings, fetch_readings_by_object, insert_anomalies)
 from models import MLModel
+from rul_model import RULModel
 
 app = FastAPI(title="ML Anomaly Detection Service")
 
@@ -113,4 +115,143 @@ async def detect_anomalies(request: DetectRequest):
     return DetectResponse(
         anomalies_found=len(all_anomalies),
         anomalies_inserted=inserted,
+    )
+
+
+# ─── Health Score ──────────────────────────────────────────────────────────────
+
+class EquipmentHealthResponse(BaseModel):
+    equipment_id: str
+    score: float
+    grade: str
+    anomaly_rate: float
+    windows_checked: int
+
+
+@app.get("/api/v1/equipment/{equipment_id}/health", response_model=EquipmentHealthResponse)
+async def equipment_health(equipment_id: str):
+    df = fetch_equipment_readings(equipment_id, limit=2000)
+
+    if df.empty or "current_a" not in df.columns:
+        return EquipmentHealthResponse(
+            equipment_id=equipment_id, score=100.0, grade="A",
+            anomaly_rate=0.0, windows_checked=0
+        )
+
+    ml_input = df[["current_a"]].copy()
+    ml_input.insert(0, "time", pd.date_range("2024-01-01", periods=len(ml_input), freq="s", tz="UTC"))
+
+    window_size = min(100, max(10, len(ml_input) // 5))
+    model = MLModel(window_size=window_size)
+
+    try:
+        features, preds = model.fit_predict(ml_input)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Model error: {exc}")
+
+    total   = len(preds)
+    anomaly_count = int(np.sum(preds == -1))
+    anomaly_rate  = anomaly_count / total if total > 0 else 0.0
+    score   = round(max(0.0, 100.0 * (1 - anomaly_rate * 20)), 1)
+    grade   = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 50 else "D"
+
+    return EquipmentHealthResponse(
+        equipment_id=equipment_id,
+        score=score,
+        grade=grade,
+        anomaly_rate=round(anomaly_rate, 4),
+        windows_checked=total,
+    )
+
+
+# ─── Predictions list ─────────────────────────────────────────────────────────
+
+class PredictionItem(BaseModel):
+    equipment_id: str
+    rul_days: int
+    failure_probability: float
+    status: str
+    confidence: str
+
+
+@app.get("/api/v1/predictions", response_model=list[PredictionItem])
+async def get_predictions(object_id: Optional[str] = None, limit: int = 20):
+    rul_model = RULModel()
+    if not rul_model.trained:
+        raise HTTPException(status_code=503, detail="RUL model not trained yet. Run train_rul.py.")
+
+    equipment_ids = fetch_equipment_ids_by_object(object_id) if object_id else []
+
+    results = []
+    for eq_id in equipment_ids[:limit]:
+        df = fetch_equipment_readings(eq_id, limit=1000)
+        if df.empty or "current_a" not in df.columns:
+            continue
+
+        signal = df["current_a"].dropna().values
+        if len(signal) < 50:
+            continue
+
+        # Compute features for RUL prediction
+        rms_history = []
+        window_size = 50
+        for start in range(0, len(signal) - window_size + 1, 25):
+            w   = signal[start:start + window_size]
+            rms_history.append(float(np.sqrt(np.mean(w ** 2))))
+
+        if not rms_history:
+            continue
+
+        last_window = signal[-window_size:]
+        from rul_model import RULModel as _RUL
+        features = _RUL.compute_features(last_window, rms_history[-7:] if len(rms_history) >= 7 else rms_history)
+        pred = rul_model.predict(features)
+        results.append(PredictionItem(equipment_id=eq_id, **pred))
+
+    return results
+
+
+# ─── RUL Predict endpoint ─────────────────────────────────────────────────────
+
+class PredictRequest(BaseModel):
+    equipment_id: str
+
+
+class PredictResponse(BaseModel):
+    equipment_id: str
+    rul_days: int
+    status: str
+    confidence: str
+    failure_probability: float
+    features_snapshot: dict
+
+
+@app.post("/ml/predict", response_model=PredictResponse)
+async def predict_rul(request: PredictRequest):
+    rul_model = RULModel()
+    if not rul_model.trained:
+        raise HTTPException(status_code=503, detail="RUL model not trained yet. Run train_rul.py.")
+
+    df = fetch_equipment_readings(request.equipment_id, limit=1000)
+    if df.empty or "current_a" not in df.columns:
+        raise HTTPException(status_code=404, detail="No readings found for equipment")
+
+    signal = df["current_a"].dropna().values
+    if len(signal) < 50:
+        raise HTTPException(status_code=422, detail="Insufficient readings (need ≥50)")
+
+    rms_history = []
+    for start in range(0, len(signal) - 50 + 1, 25):
+        w = signal[start:start + 50]
+        rms_history.append(float(np.sqrt(np.mean(w ** 2))))
+
+    from rul_model import RULModel as _RUL
+    features = _RUL.compute_features(signal[-50:], rms_history[-7:] if len(rms_history) >= 7 else rms_history)
+    feature_names = ["current_rms", "current_std", "current_max", "spike_freq", "trend_slope"]
+
+    pred = rul_model.predict(features)
+    return PredictResponse(
+        equipment_id=request.equipment_id,
+        features_snapshot=dict(zip(feature_names, features)),
+        **pred,
     )
