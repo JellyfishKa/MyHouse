@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import MainLayout from './components/MainLayout';
 import Dashboard from './pages/Dashboard';
 import Equipment from './pages/Equipment';
+import Anomalies from './pages/Anomalies';
 
 const router = createBrowserRouter([
   {
@@ -15,6 +16,10 @@ const router = createBrowserRouter([
       {
         path: 'equipment',
         element: <Equipment />,
+      },
+      {
+        path: 'anomalies',
+        element: <Anomalies />,
       },
     ],
   },

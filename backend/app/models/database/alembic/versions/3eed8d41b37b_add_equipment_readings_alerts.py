@@ -19,10 +19,25 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create all missing enum types
-    op.execute("CREATE TYPE severity_level_enum AS ENUM ('low', 'medium', 'high', 'critical')")
-    op.execute("CREATE TYPE equipment_type_enum AS ENUM ('server', 'conditioner', 'ups', 'switch')")
-    op.execute("CREATE TYPE equipment_status_enum AS ENUM ('online', 'offline', 'maintenance')")
+    # Create enum types safely (severity_level_enum already exists from init migration)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE severity_level_enum AS ENUM ('low', 'medium', 'high', 'critical');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE equipment_type_enum AS ENUM ('server', 'conditioner', 'ups', 'switch');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE equipment_status_enum AS ENUM ('online', 'offline', 'maintenance');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     op.create_table(
         'equipment',
@@ -55,6 +70,9 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_alerts_equipment_id'), 'alerts', ['equipment_id'], unique=False)
     op.create_index(op.f('ix_alerts_triggered_at'), 'alerts', ['triggered_at'], unique=False)
+
+    # anomalies was created in init migration without indexes/defaults — drop and recreate
+    op.drop_table('anomalies')
 
     op.create_table(
         'anomalies',

@@ -71,11 +71,19 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
             db.add_all(eq_readings)
 
             # Also write to readings (sensors table) so ConsumptionChart shows data
-            for sensor_id in sensor_ids[:3]:  # max 3 sensors
+            # Each sensor gets a distinct multiplier so lines are visually separate
+            sensor_profiles = [
+                (1.00, 0.5, True),   # servers  — full load, spikes
+                (0.60, 0.3, False),  # cooling  — 60 % load, no spike
+                (0.35, 0.2, True),   # ups      — 35 % load, small spikes
+            ]
+            for i, sensor_id in enumerate(sensor_ids[:3]):
+                mult, noise, can_spike = sensor_profiles[i]
+                spike = (spike_amp * mult) if (can_spike and step % 3 == 0) else 0
                 db.add(Reading(
                     time=now,
                     sensor_id=sensor_id,
-                    value=round(base_current + random.gauss(0, 0.5) + (spike_amp if step % 3 == 0 else 0), 3),
+                    value=round(base_current * mult + random.gauss(0, noise) + spike, 3),
                 ))
 
             if not alert_created and step >= 3:

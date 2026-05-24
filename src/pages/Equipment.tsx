@@ -61,7 +61,9 @@ const Equipment = () => {
       return acc;
     }, {});
 
-    return Object.entries(grouped).map(([cat, catSensors]) => {
+    // Все 4 категории показываем всегда — пустые отображаются серым
+    return Object.keys(CATEGORY_CONFIG).map((cat) => {
+      const catSensors = grouped[cat] ?? [];
       const catSummary = summaryByCategory.get(cat);
       const hasData = catSensors.some((s) => isRecent(s.last_reading_at));
       return {
@@ -90,11 +92,15 @@ const Equipment = () => {
     [sensors, drawerCategory],
   );
 
+  const cellStyle = { padding: '10px 16px' };
+
   const columns = [
     {
       title: 'Категория',
       dataIndex: 'category',
       key: 'category',
+      onCell: () => ({ style: cellStyle }),
+      onHeaderCell: () => ({ style: cellStyle }),
       render: (cat: string) => {
         const cfg = CATEGORY_CONFIG[cat] ?? { label: cat, icon: DashboardOutlined };
         const Icon = cfg.icon;
@@ -110,11 +116,15 @@ const Equipment = () => {
       title: 'Сенсоров',
       dataIndex: 'sensors',
       key: 'count',
+      onCell: () => ({ style: cellStyle }),
+      onHeaderCell: () => ({ style: cellStyle }),
       render: (s: ObjectSensor[]) => s.length,
     },
     {
       title: 'Среднее',
       key: 'avg',
+      onCell: () => ({ style: cellStyle }),
+      onHeaderCell: () => ({ style: cellStyle }),
       render: (_: unknown, row: CategoryRow) =>
         row.avgValue != null ? (
           <Text>{row.avgValue.toFixed(2)} {row.unit}</Text>
@@ -125,6 +135,8 @@ const Equipment = () => {
     {
       title: 'Статус',
       key: 'status',
+      onCell: () => ({ style: cellStyle }),
+      onHeaderCell: () => ({ style: cellStyle }),
       render: (_: unknown, row: CategoryRow) =>
         row.hasData ? (
           <Tag color="success">Норма</Tag>
@@ -135,6 +147,8 @@ const Equipment = () => {
     {
       title: '',
       key: 'action',
+      onCell: () => ({ style: cellStyle }),
+      onHeaderCell: () => ({ style: cellStyle }),
       render: (_: unknown, row: CategoryRow) => (
         <Button size="small" onClick={() => setDrawerCategory(row.category)}>
           Подробнее
@@ -157,29 +171,34 @@ const Equipment = () => {
 
   return (
     <Space direction="vertical" size={20} style={{ width: '100%' }}>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} md={8}>
-          <Card className="surface-card stat-card">
+      <Row gutter={[10, 10]}>
+        <Col xs={8}>
+          <Card className="surface-card stat-card" style={{ height: '100%' }}>
             <Statistic
               title="Health Score"
-              value={healthScore ? `${healthScore.score} (${healthScore.grade})` : '—'}
-              valueStyle={{ color: healthScore ? healthColor : undefined }}
+              value={healthScore ? `${healthScore.score}` : '—'}
+              suffix={healthScore ? ` ${healthScore.grade}` : ''}
+              valueStyle={{ color: healthScore ? healthColor : undefined, fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
             />
           </Card>
         </Col>
-        <Col xs={24} md={8}>
-          <Card className="surface-card stat-card">
+        <Col xs={8}>
+          <Card className="surface-card stat-card" style={{ height: '100%' }}>
             <Statistic
-              title="Прогнозный ресурс (RUL)"
-              value={rul ? `${rul.rul_days} дн.` : '—'}
-              valueStyle={{ color: rul ? rulColor : undefined }}
+              title="RUL"
+              value={rul ? `${rul.rul_days}` : '—'}
+              suffix={rul ? ' дн.' : ''}
+              valueStyle={{ color: rul ? rulColor : undefined, fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
             />
-            <Text type="secondary">Уверенность: {rul ? 'низкая (эвристика)' : '—'}</Text>
           </Card>
         </Col>
-        <Col xs={24} md={8}>
-          <Card className="surface-card stat-card">
-            <Statistic title="Категорий оборудования" value={rows.length} />
+        <Col xs={8}>
+          <Card className="surface-card stat-card" style={{ height: '100%' }}>
+            <Statistic
+              title="Категорий"
+              value={rows.length}
+              valueStyle={{ fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
+            />
           </Card>
         </Col>
       </Row>

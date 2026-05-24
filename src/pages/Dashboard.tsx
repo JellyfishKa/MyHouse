@@ -5,7 +5,6 @@ import {
   Card,
   Col,
   Empty,
-  List,
   Row,
   Skeleton,
   Space,
@@ -31,12 +30,25 @@ import {
 
 const POLL_MS = 2000;
 
-const { Paragraph, Text, Title } = Typography;
+const { Text, Title } = Typography;
 
 const typeLabels: Record<string, string> = {
   datacenter: 'Датацентр',
   workshop: 'Производственный узел',
   building: 'Здание',
+};
+
+const healthColor = (grade?: string) => {
+  if (grade === 'A') return '#2ecc72';
+  if (grade === 'B') return '#f0a500';
+  if (grade === 'C') return '#e67e22';
+  return '#e74c3c';
+};
+
+const rulColor = (status?: string) => {
+  if (status === 'ok') return '#2ecc72';
+  if (status === 'warning') return '#f0a500';
+  return '#e74c3c';
 };
 
 const Dashboard = () => {
@@ -45,21 +57,22 @@ const Dashboard = () => {
   const queryClient = useQueryClient();
   const [stressActive, setStressActive] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
-  const { data: sensors = [], isLoading: sensorsLoading, error: sensorsError } =
+
+  const { data: sensors = [] } =
     useObjectSensors(selectedObjectId);
   const { data: summary = [], isLoading: summaryLoading, error: summaryError } =
     useSummary(selectedObjectId, stressActive ? POLL_MS : false);
-  const { data: healthScore, isLoading: healthLoading } = useHealthScore(selectedObjectId, stressActive ? POLL_MS : false);
-  const { data: rul, isLoading: rulLoading } = useRul(selectedObjectId, stressActive ? POLL_MS : false);
+  const { data: healthScore, isLoading: healthLoading } =
+    useHealthScore(selectedObjectId, stressActive ? POLL_MS : false);
+  const { data: rul, isLoading: rulLoading } =
+    useRul(selectedObjectId, stressActive ? POLL_MS : false);
+
   const detectMutation = useTriggerDetection();
   const stressMutation = useStressTest();
 
   const sourceLabel = useMemo(() => {
     const source = selectedObject?.meta_data?.source;
-    if (typeof source !== 'string') {
-      return 'manual';
-    }
-    return source;
+    return typeof source === 'string' ? source : 'manual';
   }, [selectedObject?.meta_data]);
 
   const handleDetect = async () => {
@@ -67,62 +80,61 @@ const Dashboard = () => {
     try {
       const result = await detectMutation.mutateAsync({ object_id: selectedObjectId, days: 1 });
       await queryClient.invalidateQueries({ queryKey: ['anomalies', selectedObjectId] });
-      messageApi.success(
-        `ML завершил анализ: найдено ${result.anomalies_found}, записано ${result.anomalies_inserted}`,
-      );
+      messageApi.success(`ML завершил анализ: найдено ${result.anomalies_found}, записано ${result.anomalies_inserted}`);
     } catch (error) {
-      const text = error instanceof Error ? error.message : 'Неизвестная ошибка';
-      messageApi.error(`Не удалось запустить ML-анализ: ${text}`);
+      messageApi.error(`Не удалось запустить ML-анализ: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
     }
   };
 
   const handleStressTest = async () => {
     if (!selectedObjectId) return;
     try {
-      await stressMutation.mutateAsync({ object_id: selectedObjectId, duration_seconds: 60 });
+      await stressMutation.mutateAsync({ object_id: selectedObjectId, duration_seconds: 300 });
       setStressActive(true);
-      messageApi.warning('Стресс-тест запущен на 60 секунд');
-      setTimeout(() => {
-        setStressActive(false);
-        messageApi.info('Стресс-тест завершён');
-      }, 90_000);
+      messageApi.warning('Стресс-тест запущен на 5 минут — данные обновляются каждые 2 с');
+      setTimeout(() => { setStressActive(false); messageApi.info('Стресс-тест завершён'); }, 360_000);
     } catch (error) {
-      const text = error instanceof Error ? error.message : 'Неизвестная ошибка';
-      messageApi.error(`Не удалось запустить стресс-тест: ${text}`);
+      messageApi.error(`Не удалось запустить стресс-тест: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
     }
   };
 
   return (
-    <Space direction="vertical" size={20} style={{ width: '100%' }}>
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
       {contextHolder}
 
       {stressActive && (
-        <Alert
-          type="warning"
-          message="Стресс-тест активен — данные обновляются каждые 2 секунды"
-          showIcon
-          banner
-        />
+        <Alert type="warning" message="Стресс-тест активен — данные обновляются каждые 2 секунды" showIcon banner />
       )}
 
+      {/* Hero card */}
       <Card className="hero-card">
         <div className="hero-card__content">
           <div>
-            <Text className="eyebrow">
+            <Text className="eyebrow" style={{ color: 'rgba(46,204,114,0.8)' }}>
               {selectedObject ? 'Активный объект' : 'Панель управления'}
             </Text>
-            <Title level={1} className="page-title">
-              {selectedObject ? selectedObject.name : 'MyHouse Monitor'}
+            <Title level={2} style={{ color: '#e8f5ee', margin: '4px 0 8px', fontWeight: 700, letterSpacing: '-0.3px' }}>
+              {selectedObject ? selectedObject.name : 'ПУЛЬСТОК'}
             </Title>
             {selectedObject && (
               <>
-                <Paragraph className="page-subtitle">
-                  Интерфейс строится от реальных объектов и сенсоров API.
-                </Paragraph>
-                <Space wrap>
-                  <Tag color="cyan">{typeLabels[selectedObject.type] ?? selectedObject.type}</Tag>
-                  <Tag color="geekblue">Источник: {sourceLabel}</Tag>
-                  <Tag color={mlHealth?.status === 'ok' ? 'success' : 'error'}>
+                <Text style={{ color: '#a8d5ba', fontSize: 13, display: 'block', marginBottom: 12 }}>
+                  Мониторинг объекта в реальном времени
+                </Text>
+                <Space wrap size={6}>
+                  <Tag style={{ background: 'rgba(46,204,114,0.2)', color: '#7de8a8', border: '1px solid rgba(46,204,114,0.35)', borderRadius: 20, fontWeight: 500 }}>
+                    {typeLabels[selectedObject.type] ?? selectedObject.type}
+                  </Tag>
+                  <Tag style={{ background: 'rgba(96,165,250,0.2)', color: '#93c5fd', border: '1px solid rgba(96,165,250,0.35)', borderRadius: 20, fontWeight: 500 }}>
+                    Источник: {sourceLabel}
+                  </Tag>
+                  <Tag style={{
+                    background: mlHealth?.status === 'ok' ? 'rgba(46,204,114,0.2)' : 'rgba(239,68,68,0.2)',
+                    color: mlHealth?.status === 'ok' ? '#7de8a8' : '#fca5a5',
+                    border: `1px solid ${mlHealth?.status === 'ok' ? 'rgba(46,204,114,0.35)' : 'rgba(239,68,68,0.35)'}`,
+                    borderRadius: 20,
+                    fontWeight: 500,
+                  }}>
                     ML {mlHealth?.status === 'ok' ? 'доступен' : 'недоступен'}
                   </Tag>
                 </Space>
@@ -139,7 +151,7 @@ const Dashboard = () => {
               loading={detectMutation.isPending}
               disabled={!selectedObjectId}
             >
-              Запустить ML-анализ
+              ML-анализ
             </Button>
             <Button
               type="primary"
@@ -150,7 +162,7 @@ const Dashboard = () => {
               loading={stressMutation.isPending}
               disabled={stressActive || !selectedObjectId}
             >
-              {stressActive ? 'Стресс-тест активен...' : 'Стресс-тест'}
+              {stressActive ? 'Активен...' : 'Стресс-тест'}
             </Button>
           </Space>
         </div>
@@ -161,103 +173,63 @@ const Dashboard = () => {
       )}
 
       {!objectsLoading && !selectedObject && (
-        <Empty description="Выберите объект в верхней панели для просмотра данных" />
+        <Empty description="Выберите объект для просмотра данных" />
       )}
 
-      {selectedObject && <><Row gutter={[16, 16]}>
-        <Col xs={24} md={8}>
-          <Card className="surface-card stat-card">
-            {healthLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
-              <Statistic
-                title="Health Score"
-                value={healthScore ? `${healthScore.score} (${healthScore.grade})` : '—'}
-                valueStyle={{
-                  color: healthScore
-                    ? healthScore.grade === 'A' ? '#15803d'
-                    : healthScore.grade === 'B' ? '#0f766e'
-                    : healthScore.grade === 'C' ? '#d97706'
-                    : '#d4380d'
-                    : undefined,
-                }}
-              />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} md={8}>
-          <Card className="surface-card stat-card">
-            {summaryLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
-              <Statistic
-                title="Потребление"
-                value={summary[0]?.average != null ? summary[0].average.toFixed(2) : '—'}
-                suffix={summary[0]?.unit ?? 'кВт'}
-                prefix={<ThunderboltOutlined />}
-              />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} md={8}>
-          <Card className="surface-card stat-card">
-            {rulLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
-              <>
-                <Statistic
-                  title="Прогноз (RUL)"
-                  value={rul ? `${rul.rul_days} дн.` : '—'}
-                  valueStyle={{
-                    color: rul
-                      ? rul.status === 'ok' ? '#15803d'
-                      : rul.status === 'warning' ? '#d97706'
-                      : '#d4380d'
-                      : undefined,
-                  }}
-                />
-                <Text type="secondary">
-                  {rul ? `Статус: ${rul.status === 'ok' ? 'норма' : rul.status === 'warning' ? 'предупреждение' : 'критично'}` : 'Загрузка...'}
-                </Text>
-              </>
-            )}
-          </Card>
-        </Col>
-      </Row>
+      {selectedObject && (
+        <>
+          {/* Stat row — xs=8 так что три карточки в одну строку на мобиле */}
+          <Row gutter={[10, 10]}>
+            <Col xs={8} md={8}>
+              <Card className="surface-card stat-card" style={{ height: '100%' }}>
+                {healthLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
+                  <Statistic
+                    title="Health"
+                    value={healthScore ? `${healthScore.score}` : '—'}
+                    suffix={healthScore ? ` ${healthScore.grade}` : ''}
+                    valueStyle={{ color: healthColor(healthScore?.grade), fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
+                  />
+                )}
+              </Card>
+            </Col>
+            <Col xs={8} md={8}>
+              <Card className="surface-card stat-card" style={{ height: '100%' }}>
+                {summaryLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
+                  <Statistic
+                    title="Потребл."
+                    value={summary[0]?.average != null ? summary[0].average.toFixed(1) : '—'}
+                    suffix={summary[0]?.unit ?? 'кВт'}
+                    valueStyle={{ color: '#2ecc72', fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
+                  />
+                )}
+              </Card>
+            </Col>
+            <Col xs={8} md={8}>
+              <Card className="surface-card stat-card" style={{ height: '100%' }}>
+                {rulLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
+                  <Statistic
+                    title="RUL"
+                    value={rul ? `${rul.rul_days}` : '—'}
+                    suffix={rul ? ' дн.' : ''}
+                    valueStyle={{ color: rulColor(rul?.status), fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
+                  />
+                )}
+              </Card>
+            </Col>
+          </Row>
 
-      <SummaryCards data={summary} isLoading={summaryLoading} error={summaryError} />
+          {/* Summary cards (accordion on mobile, sensors merged in) */}
+          <SummaryCards data={summary} sensors={sensors} isLoading={summaryLoading} error={summaryError} />
 
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={16}>
+          {/* Chart */}
           <ConsumptionChart
             key={selectedObject.id}
             objectItem={selectedObject}
             sensors={sensors}
             refetchInterval={stressActive ? POLL_MS : false}
           />
-        </Col>
-        <Col xs={24} xl={8}>
-          <Card className="surface-card" title="Сенсоры объекта">
-            {sensorsError ? (
-              <Alert type="error" message="Не удалось загрузить сенсоры" showIcon />
-            ) : (
-              <List
-                loading={sensorsLoading}
-                dataSource={sensors}
-                locale={{ emptyText: 'У объекта пока нет сенсоров' }}
-                renderItem={(sensor) => (
-                  <List.Item>
-                    <List.Item.Meta
-                      title={sensor.label}
-                      description={`${sensor.unit} • ${sensor.reading_count.toLocaleString('ru-RU')} точек`}
-                    />
-                    <Text type="secondary">
-                      {sensor.last_reading_at
-                        ? new Date(sensor.last_reading_at).toLocaleString('ru-RU')
-                        : 'нет данных'}
-                    </Text>
-                  </List.Item>
-                )}
-              />
-            )}
-          </Card>
-        </Col>
-      </Row>
-      </>}
+        </>
+      )}
     </Space>
   );
 };

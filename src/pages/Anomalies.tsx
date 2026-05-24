@@ -90,7 +90,7 @@ const Anomalies = () => {
             Показываем последние срабатывания для объекта <strong>{selectedObject.name}</strong>.
             Фильтр по severity работает прямо от backend API.
           </Paragraph>
-          <Space wrap>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <Select
               allowClear
               placeholder="Все уровни"
@@ -103,7 +103,7 @@ const Anomalies = () => {
               }))}
             />
             <Statistic title="Всего записей" value={data.length} />
-          </Space>
+          </div>
         </Space>
       </Card>
 
