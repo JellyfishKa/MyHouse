@@ -34,7 +34,7 @@ interface CategoryRow {
 }
 
 const Equipment = () => {
-  const { selectedObjectId } = useOutletContext<AppLayoutContextValue>();
+  const { selectedObjectId, selectedObject } = useOutletContext<AppLayoutContextValue>();
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [drawerCategory, setDrawerCategory] = useState<string | null>(null);
@@ -242,6 +242,7 @@ const Equipment = () => {
         category={drawerCategory ?? ''}
         sensors={drawerSensors}
         objectId={selectedObjectId}
+        objectItem={selectedObject}
         onClose={() => setDrawerCategory(null)}
       />
     </Space>

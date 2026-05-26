@@ -18,7 +18,7 @@ import {
   YAxis,
 } from 'recharts';
 import ConsumptionChart from './ConsumptionChart';
-import { useHealthScore, useRul, type ObjectSensor } from '../api/hooks';
+import { useHealthScore, useRul, type MonitoringObject, type ObjectSensor } from '../api/hooks';
 import { EQUIPMENT_PASSPORTS } from '../data/equipment-passports';
 
 const { Text, Title } = Typography;
@@ -65,10 +65,11 @@ interface EquipmentDrawerProps {
   category: string;
   sensors: ObjectSensor[];
   objectId?: string;
+  objectItem?: MonitoringObject;
   onClose: () => void;
 }
 
-const EquipmentDrawer = ({ open, category, sensors, objectId, onClose }: EquipmentDrawerProps) => {
+const EquipmentDrawer = ({ open, category, sensors, objectId, objectItem, onClose }: EquipmentDrawerProps) => {
   const cfg = CATEGORY_CONFIG[category] ?? { label: category, icon: DashboardOutlined };
   const Icon = cfg.icon;
 
@@ -265,7 +266,7 @@ const EquipmentDrawer = ({ open, category, sensors, objectId, onClose }: Equipme
                     styles={{ body: { padding: '10px 14px' } }}
                   >
                     <Text style={{ fontSize: 12, color: '#4a7a5e', lineHeight: 1.6 }}>
-                      <strong>Диагностика NILM: </strong>{passport.notes}
+                      <strong>Диагностика и пороги: </strong>{passport.diagnostics}
                     </Text>
                   </Card>
                 </Space>
@@ -284,7 +285,7 @@ const EquipmentDrawer = ({ open, category, sensors, objectId, onClose }: Equipme
         )}
 
         {/* ── Consumption chart ── */}
-        <ConsumptionChart sensors={sensors} />
+        <ConsumptionChart sensors={sensors} objectItem={objectItem} />
       </Space>
     </Drawer>
   );

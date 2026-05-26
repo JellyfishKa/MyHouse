@@ -42,6 +42,15 @@ export interface AnomalyRecord {
   expected: number | null;
 }
 
+export interface AlertRecord {
+  id: string;
+  equipment_id: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  message: string;
+  triggered_at: string;
+  acknowledged: boolean;
+}
+
 export interface AggregatedReading {
   time: string;
   value: number | null;
@@ -136,7 +145,7 @@ export function useSummary(objectId?: string, refetchInterval?: number | false) 
   });
 }
 
-export function useAnomalies(objectId?: string, severity?: string) {
+export function useAnomalies(objectId?: string, severity?: string, refetchInterval?: number | false) {
   return useQuery<AnomalyRecord[]>({
     queryKey: ['anomalies', objectId, severity],
     queryFn: async () => {
@@ -146,6 +155,19 @@ export function useAnomalies(objectId?: string, severity?: string) {
       return data;
     },
     enabled: !!objectId,
+    refetchInterval: refetchInterval ?? false,
+  });
+}
+
+export function useEquipmentAlerts(equipmentId?: string, refetchInterval?: number | false) {
+  return useQuery<AlertRecord[]>({
+    queryKey: ['equipment-alerts', equipmentId],
+    queryFn: async () => {
+      const { data } = await api.get(`/equipment/${equipmentId}/alerts`);
+      return data;
+    },
+    enabled: !!equipmentId,
+    refetchInterval: refetchInterval ?? false,
   });
 }
 

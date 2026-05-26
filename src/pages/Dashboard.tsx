@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
@@ -19,7 +19,10 @@ import { ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import ConsumptionChart from '../components/ConsumptionChart';
 import type { AppLayoutContextValue } from '../components/MainLayout';
 import SummaryCards from '../components/SummaryCards';
+import { useStressNotifications } from '../hooks/useStressNotifications';
 import {
+  useAnomalies,
+  useEquipmentAlerts,
   useHealthScore,
   useObjectSensors,
   useRul,
@@ -37,6 +40,13 @@ const typeLabels: Record<string, string> = {
   workshop: 'Производственный узел',
   building: 'Здание',
 };
+
+const SEVERITY_LEGEND = [
+  { key: 'low', label: 'Низкий', color: '#52c41a' },
+  { key: 'medium', label: 'Средний', color: '#faad14' },
+  { key: 'high', label: 'Высокий', color: '#fa8c16' },
+  { key: 'critical', label: 'Критический', color: '#ff4d4f' },
+];
 
 const healthColor = (grade?: string) => {
   if (grade === 'A') return '#2ecc72';
@@ -56,16 +66,25 @@ const Dashboard = () => {
     useOutletContext<AppLayoutContextValue>();
   const queryClient = useQueryClient();
   const [stressActive, setStressActive] = useState(false);
+  const [stressEquipmentId, setStressEquipmentId] = useState<string>();
   const [messageApi, contextHolder] = message.useMessage();
 
-  const { data: sensors = [] } =
-    useObjectSensors(selectedObjectId);
+  const { data: sensors = [] } = useObjectSensors(selectedObjectId);
   const { data: summary = [], isLoading: summaryLoading, error: summaryError } =
     useSummary(selectedObjectId, stressActive ? POLL_MS : false);
   const { data: healthScore, isLoading: healthLoading } =
     useHealthScore(selectedObjectId, stressActive ? POLL_MS : false);
   const { data: rul, isLoading: rulLoading } =
     useRul(selectedObjectId, stressActive ? POLL_MS : false);
+  const { data: anomalies = [] } = useAnomalies(
+    selectedObjectId,
+    undefined,
+    stressActive ? POLL_MS : false,
+  );
+  const { data: alerts = [] } = useEquipmentAlerts(
+    stressEquipmentId,
+    stressActive ? POLL_MS : false,
+  );
 
   const detectMutation = useTriggerDetection();
   const stressMutation = useStressTest();
@@ -74,6 +93,31 @@ const Dashboard = () => {
     const source = selectedObject?.meta_data?.source;
     return typeof source === 'string' ? source : 'manual';
   }, [selectedObject?.meta_data]);
+
+  const anomalyMarkers = useMemo(
+    () => anomalies.map((a) => ({ time: a.time, severity: a.severity })),
+    [anomalies],
+  );
+
+  const handleAutoMl = useCallback(async () => {
+    if (!selectedObjectId) return;
+    try {
+      const result = await detectMutation.mutateAsync({ object_id: selectedObjectId, days: 1 });
+      await queryClient.invalidateQueries({ queryKey: ['anomalies', selectedObjectId] });
+      messageApi.info(
+        `ML-анализ (авто): найдено ${result.anomalies_found}, записано ${result.anomalies_inserted}`,
+      );
+    } catch {
+      messageApi.warning('Авто ML-анализ недоступен — продолжаем сценарий стресс-теста');
+    }
+  }, [selectedObjectId, detectMutation, queryClient, messageApi]);
+
+  useStressNotifications({
+    active: stressActive,
+    anomalies,
+    alerts,
+    onMlTrigger: handleAutoMl,
+  });
 
   const handleDetect = async () => {
     if (!selectedObjectId) return;
@@ -89,10 +133,17 @@ const Dashboard = () => {
   const handleStressTest = async () => {
     if (!selectedObjectId) return;
     try {
-      await stressMutation.mutateAsync({ object_id: selectedObjectId, duration_seconds: 300 });
+      const result = await stressMutation.mutateAsync({
+        object_id: selectedObjectId,
+        duration_seconds: 300,
+      });
+      setStressEquipmentId(result.equipment_id);
       setStressActive(true);
-      messageApi.warning('Стресс-тест запущен на 5 минут — данные обновляются каждые 2 с');
-      setTimeout(() => { setStressActive(false); messageApi.info('Стресс-тест завершён'); }, 360_000);
+      messageApi.warning('Стресс-тест запущен на 5 минут — следите за уведомлениями');
+      setTimeout(() => {
+        setStressActive(false);
+        messageApi.info('Стресс-тест завершён');
+      }, 360_000);
     } catch (error) {
       messageApi.error(`Не удалось запустить стресс-тест: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
     }
@@ -103,10 +154,23 @@ const Dashboard = () => {
       {contextHolder}
 
       {stressActive && (
-        <Alert type="warning" message="Стресс-тест активен — данные обновляются каждые 2 секунды" showIcon banner />
+        <>
+          <Alert
+            type="warning"
+            message="Стресс-тест активен — данные и аномалии обновляются каждые 2 секунды"
+            showIcon
+            banner
+          />
+          <Space wrap size={8}>
+            {SEVERITY_LEGEND.map((s) => (
+              <Tag key={s.key} color={s.color} style={{ margin: 0 }}>
+                {s.label}
+              </Tag>
+            ))}
+          </Space>
+        </>
       )}
 
-      {/* Hero card */}
       <Card className="hero-card">
         <div className="hero-card__content">
           <div>
@@ -178,7 +242,6 @@ const Dashboard = () => {
 
       {selectedObject && (
         <>
-          {/* Stat row — xs=8 так что три карточки в одну строку на мобиле */}
           <Row gutter={[10, 10]}>
             <Col xs={8} md={8}>
               <Card className="surface-card stat-card" style={{ height: '100%' }}>
@@ -218,15 +281,14 @@ const Dashboard = () => {
             </Col>
           </Row>
 
-          {/* Summary cards (accordion on mobile, sensors merged in) */}
           <SummaryCards data={summary} sensors={sensors} isLoading={summaryLoading} error={summaryError} />
 
-          {/* Chart */}
           <ConsumptionChart
             key={selectedObject.id}
             objectItem={selectedObject}
             sensors={sensors}
             refetchInterval={stressActive ? POLL_MS : false}
+            anomalyMarkers={stressActive ? anomalyMarkers : []}
           />
         </>
       )}

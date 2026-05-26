@@ -1,11 +1,12 @@
-import { memo, useMemo, useState } from 'react';
-import { Alert, Card, Segmented, Spin, Typography } from 'antd';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { Alert, Card, Empty, Segmented, Spin, Typography } from 'antd';
 import { useQueries } from '@tanstack/react-query';
 import {
   CartesianGrid,
   Legend,
   Line,
   LineChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -14,45 +15,59 @@ import {
 import {
   fetchTelemetry,
   type AggregatedReading,
+  type AnomalyRecord,
   type MonitoringObject,
   type ObjectSensor,
 } from '../api/hooks';
 
 const { Text } = Typography;
 
+export interface AnomalyMarker {
+  time: string;
+  severity: AnomalyRecord['severity'];
+}
+
 interface ConsumptionChartProps {
   objectItem?: MonitoringObject;
   sensors: ObjectSensor[];
   refetchInterval?: number | false;
+  anomalyMarkers?: AnomalyMarker[];
 }
 
 type ChartRow = Record<string, number | string | null>;
 
 const RANGE_OPTIONS = [
-  { label: '1 час',    value: 'hour'  },
-  { label: '12 часов', value: '12h'   },
-  { label: '1 день',   value: 'day'   },
-  { label: '7 дней',   value: 'week'  },
+  { label: '1 час', value: 'hour' },
+  { label: '12 часов', value: '12h' },
+  { label: '1 день', value: 'day' },
+  { label: '7 дней', value: 'week' },
+  { label: '30 дней', value: 'month' },
 ];
 
 const RANGE_LABELS: Record<string, string> = {
-  hour:  '1 час',
+  hour: '1 час',
   '12h': '12 часов',
-  day:   '24 часа',
-  week:  '7 дней',
+  day: '24 часа',
+  week: '7 дней',
   month: '30 дней',
 };
 
-// Уникальные стиль + цвет для каждой линии сенсора
+const SEVERITY_DOT: Record<string, string> = {
+  low: '#52c41a',
+  medium: '#faad14',
+  high: '#fa8c16',
+  critical: '#ff4d4f',
+};
+
 const CHART_LINE_STYLES = [
-  { stroke: '#0f766e', strokeDasharray: undefined,       strokeWidth: 2.4 },
-  { stroke: '#f97316', strokeDasharray: '8 3',           strokeWidth: 2.2 },
-  { stroke: '#2563eb', strokeDasharray: '3 3',           strokeWidth: 2.0 },
-  { stroke: '#7c3aed', strokeDasharray: '10 4 2 4',      strokeWidth: 2.2 },
-  { stroke: '#ea580c', strokeDasharray: '5 2',           strokeWidth: 2.0 },
-  { stroke: '#0891b2', strokeDasharray: '12 3',          strokeWidth: 2.2 },
-  { stroke: '#16a34a', strokeDasharray: '6 2 2 2',       strokeWidth: 2.0 },
-  { stroke: '#db2777', strokeDasharray: '4 4',           strokeWidth: 2.2 },
+  { stroke: '#0f766e', strokeDasharray: undefined, strokeWidth: 2.4 },
+  { stroke: '#f97316', strokeDasharray: '8 3', strokeWidth: 2.2 },
+  { stroke: '#2563eb', strokeDasharray: '3 3', strokeWidth: 2.0 },
+  { stroke: '#7c3aed', strokeDasharray: '10 4 2 4', strokeWidth: 2.2 },
+  { stroke: '#ea580c', strokeDasharray: '5 2', strokeWidth: 2.0 },
+  { stroke: '#0891b2', strokeDasharray: '12 3', strokeWidth: 2.2 },
+  { stroke: '#16a34a', strokeDasharray: '6 2 2 2', strokeWidth: 2.0 },
+  { stroke: '#db2777', strokeDasharray: '4 4', strokeWidth: 2.2 },
 ];
 
 const rangeToWindow = (range: string, anchor: Date) => {
@@ -73,7 +88,6 @@ const rangeToWindow = (range: string, anchor: Date) => {
     from.setDate(anchor.getDate() - 7);
     return { from, agg: 'day' as const };
   }
-  // month
   from.setDate(anchor.getDate() - 30);
   return { from, agg: 'day' as const };
 };
@@ -81,51 +95,39 @@ const rangeToWindow = (range: string, anchor: Date) => {
 const buildAnchorDate = (objectItem?: MonitoringObject) =>
   objectItem?.last_reading_at ? new Date(objectItem.last_reading_at) : new Date();
 
-// Мок-данные: каждый «сенсор» имеет свою фазу и амплитуду синусоиды
-const MOCK_SENSORS = [
-  { label: 'Серверы (демо)',    base: 220, amp: 40, phase: 0.0 },
-  { label: 'Охлаждение (демо)', base: 185, amp: 25, phase: 1.5 },
-  { label: 'ИБП (демо)',        base: 160, amp: 15, phase: 3.1 },
-];
-
-const generateMockData = (): ChartRow[] =>
-  Array.from({ length: 30 }, (_, i) => {
-    const row: ChartRow = {
-      time: new Date(Date.now() - (29 - i) * 24 * 3_600_000).toISOString(),
-    };
-    MOCK_SENSORS.forEach(({ label, base, amp, phase }) => {
-      row[label] = parseFloat((base + Math.sin(i / 4 + phase) * amp + Math.random() * 8).toFixed(2));
-    });
-    return row;
-  });
-
-const ConsumptionChart = ({ objectItem, sensors, refetchInterval }: ConsumptionChartProps) => {
+const ConsumptionChart = ({
+  objectItem,
+  sensors,
+  refetchInterval,
+  anomalyMarkers = [],
+}: ConsumptionChartProps) => {
+  const isLive = !!refetchInterval;
   const [selectedRange, setSelectedRange] = useState('week');
 
+  useEffect(() => {
+    if (isLive) setSelectedRange('hour');
+  }, [isLive]);
+
   const to = useMemo(
-    () => (refetchInterval ? new Date() : buildAnchorDate(objectItem)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [objectItem, refetchInterval],
+    () => (isLive ? new Date() : buildAnchorDate(objectItem)),
+    [objectItem, isLive],
   );
 
   const { from, agg } = useMemo(() => rangeToWindow(selectedRange, to), [selectedRange, to]);
-
-  const queryKeys = useMemo(
-    () => sensors.map((sensor) => ['telemetry', sensor.id, from.toISOString(), agg, refetchInterval ? 'live' : 'static']),
-    [sensors, from, agg, refetchInterval],
-  );
+  const toIso = to.toISOString();
+  const fromIso = from.toISOString();
 
   const telemetryQueries = useQueries({
-    queries: sensors.map((sensor, i) => ({
-      queryKey: queryKeys[i],
-      queryFn: () => fetchTelemetry(sensor.id, from.toISOString(), new Date().toISOString(), agg),
+    queries: sensors.map((sensor) => ({
+      queryKey: ['telemetry', sensor.id, fromIso, toIso, agg, isLive ? 'live' : 'static'],
+      queryFn: () => fetchTelemetry(sensor.id, fromIso, toIso, agg),
       enabled: !!sensor.id,
       refetchInterval: refetchInterval ?? false,
     })),
   });
 
   const isLoading = telemetryQueries.some((q) => q.isLoading);
-  const hasError   = telemetryQueries.some((q) => q.error);
+  const hasError = telemetryQueries.some((q) => q.error);
 
   const chartData = useMemo(() => {
     const timeMap = new Map<string, ChartRow>();
@@ -142,14 +144,34 @@ const ConsumptionChart = ({ objectItem, sensors, refetchInterval }: ConsumptionC
     );
   }, [sensors, telemetryQueries]);
 
-  const useMock = !sensors.length || !chartData.length;
-  const displayData = useMock ? generateMockData() : chartData;
+  const stats = useMemo(() => {
+    const values: number[] = [];
+    chartData.forEach((row) => {
+      sensors.forEach((s) => {
+        const v = row[s.label];
+        if (typeof v === 'number') values.push(v);
+      });
+    });
+    if (!values.length) return null;
+    return {
+      min: Math.min(...values),
+      max: Math.max(...values),
+      count: chartData.length,
+    };
+  }, [chartData, sensors]);
 
   if (isLoading) return <div className="chart-loading"><Spin size="large" /></div>;
-  if (hasError)  return <Alert type="error" message="Не удалось загрузить временной ряд" showIcon />;
+  if (hasError) return <Alert type="error" message="Не удалось загрузить временной ряд" showIcon />;
 
-  const mockSensorNames = MOCK_SENSORS.map((s) => s.label);
-  const activeSensorNames = useMock ? mockSensorNames : sensors.map((s) => s.label);
+  if (!sensors.length || !chartData.length) {
+    return (
+      <Card className="surface-card" title="Потребление">
+        <Empty description="Нет данных телеметрии. Запустите: python scripts/seed_demo.py" />
+      </Card>
+    );
+  }
+
+  const firstSensorLabel = sensors[0]?.label;
 
   return (
     <Card
@@ -160,45 +182,52 @@ const ConsumptionChart = ({ objectItem, sensors, refetchInterval }: ConsumptionC
           options={RANGE_OPTIONS}
           value={selectedRange}
           onChange={(v) => setSelectedRange(String(v))}
+          disabled={isLive}
         />
       }
     >
       <div className="chart-card__meta">
         <Text type="secondary">
-          {useMock
-            ? 'Демо-данные (реальные сенсоры не подключены)'
-            : `Интервал до ${to.toLocaleString('ru-RU')} · агрегация: ${agg}`}
+          {isLive
+            ? `Live · raw · до ${to.toLocaleString('ru-RU')}`
+            : `Интервал ${from.toLocaleString('ru-RU')} — ${to.toLocaleString('ru-RU')} · агрегация: ${agg}`}
+          {stats && ` · точек: ${stats.count} · min ${stats.min.toFixed(1)} / max ${stats.max.toFixed(1)} Вт`}
         </Text>
       </div>
 
       <div className="chart-shell">
         <ResponsiveContainer>
-          <LineChart data={displayData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+          <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
             <CartesianGrid stroke="#d7e3e0" strokeDasharray="3 3" />
             <XAxis
               dataKey="time"
               minTickGap={36}
               tickFormatter={(v) =>
                 new Date(v).toLocaleString('ru-RU', {
-                  day: '2-digit', month: '2-digit',
-                  hour: '2-digit', minute: '2-digit',
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
                 })
               }
             />
-            <YAxis />
+            <YAxis unit=" Вт" />
             <Tooltip
               labelFormatter={(label) => new Date(label).toLocaleString('ru-RU')}
-              formatter={(value) => (typeof value === 'number' ? value.toFixed(3) : String(value))}
+              formatter={(value, name) => [
+                typeof value === 'number' ? `${value.toFixed(2)} Вт` : String(value),
+                name,
+              ]}
             />
             <Legend verticalAlign="top" />
 
-            {activeSensorNames.map((name, index) => {
+            {sensors.map((sensor, index) => {
               const style = CHART_LINE_STYLES[index % CHART_LINE_STYLES.length];
               return (
                 <Line
-                  key={name}
+                  key={sensor.id}
                   type="monotone"
-                  dataKey={name}
+                  dataKey={sensor.label}
                   stroke={style.stroke}
                   strokeWidth={style.strokeWidth}
                   strokeDasharray={style.strokeDasharray}
@@ -208,6 +237,18 @@ const ConsumptionChart = ({ objectItem, sensors, refetchInterval }: ConsumptionC
                 />
               );
             })}
+
+            {firstSensorLabel && anomalyMarkers.map((m, i) => (
+              <ReferenceDot
+                key={`${m.time}-${m.severity}-${i}`}
+                x={m.time}
+                y={chartData.find((r) => r.time === m.time)?.[firstSensorLabel] as number | undefined}
+                r={6}
+                fill={SEVERITY_DOT[m.severity] ?? '#999'}
+                stroke="#fff"
+                strokeWidth={1}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
