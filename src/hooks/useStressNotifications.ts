@@ -105,6 +105,16 @@ export function useStressNotifications({
       const kind: AlertSoundKind = precursor ? 'precursor' : alert.severity;
 
       playAlertSound(kind);
+      if (document.visibilityState === 'hidden' && typeof Notification !== 'undefined') {
+        if (Notification.permission === 'granted') {
+          new Notification(
+            precursor ? 'Возможная аномалия' : `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`,
+            { body: alert.message, silent: false },
+          );
+        } else if (Notification.permission === 'default') {
+          void Notification.requestPermission();
+        }
+      }
       notification.open({
         message: precursor
           ? 'Возможная аномалия через ~6 с'
@@ -140,6 +150,17 @@ export function useStressNotifications({
       seenAnomalyIds.current.add(a.id);
 
       playAlertSound(a.severity as AlertSoundKind);
+      if (document.visibilityState === 'hidden' && typeof Notification !== 'undefined') {
+        if (Notification.permission === 'granted') {
+          new Notification(
+            `Аномалия · ${SEVERITY_LABEL[a.severity] ?? a.severity}`,
+            {
+              body: `${a.sensor_label ?? a.category}: ${a.value.toFixed(1)} Вт`,
+              silent: false,
+            },
+          );
+        }
+      }
       notification.open({
         message: `Аномалия подтверждена · ${SEVERITY_LABEL[a.severity] ?? a.severity}`,
         description: `${a.sensor_label ?? a.category}: ${a.value.toFixed(1)} Вт (ожид. ${a.expected?.toFixed(1) ?? '—'})`,

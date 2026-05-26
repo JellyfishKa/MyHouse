@@ -10,6 +10,14 @@ function getCtx(): AudioContext | null {
   return audioCtx;
 }
 
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      void getCtx()?.resume();
+    }
+  });
+}
+
 function tone(ctx: AudioContext, freq: number, start: number, duration: number, gain = 0.08) {
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
@@ -22,11 +30,7 @@ function tone(ctx: AudioContext, freq: number, start: number, duration: number, 
   osc.stop(start + duration);
 }
 
-export function playAlertSound(kind: AlertSoundKind) {
-  const ctx = getCtx();
-  if (!ctx) return;
-  if (ctx.state === 'suspended') void ctx.resume();
-
+function playTones(ctx: AudioContext, kind: AlertSoundKind) {
   const t = ctx.currentTime;
   const map: Record<AlertSoundKind, () => void> = {
     precursor: () => {
@@ -49,4 +53,30 @@ export function playAlertSound(kind: AlertSoundKind) {
     },
   };
   map[kind]();
+}
+
+/** Call on user gesture (e.g. stress-test click) so sounds work in background tabs. */
+export function unlockAudio() {
+  const ctx = getCtx();
+  if (!ctx) return;
+  void ctx.resume().then(() => {
+    if (ctx.state === 'running') {
+      tone(ctx, 40, ctx.currentTime, 0.02, 0.001);
+    }
+  });
+}
+
+export async function playAlertSound(kind: AlertSoundKind) {
+  const ctx = getCtx();
+  if (!ctx) return;
+
+  try {
+    await ctx.resume();
+  } catch {
+    /* policy blocked */
+  }
+
+  if (ctx.state === 'running') {
+    playTones(ctx, kind);
+  }
 }

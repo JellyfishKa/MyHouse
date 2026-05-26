@@ -16,6 +16,7 @@ import json
 import random
 import urllib.request
 import urllib.error
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 DEFAULT_API = "http://localhost:8000/api/v1"
@@ -33,6 +34,10 @@ def get(api: str, path: str):
     try:
         with urllib.request.urlopen(f"{api}{path}", timeout=30) as r:
             return json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        print(f"HTTP {exc.code} {path}: {body[:200]}", file=sys.stderr)
+        raise
     except urllib.error.URLError as exc:
         if "Connection refused" in str(exc.reason) or "111" in str(exc):
             print(
@@ -91,7 +96,10 @@ def seed_sensor_telemetry(api: str, object_id: str, now: datetime, rng: random.R
             })
 
             if len(batch) == 500:
-                post(api, "/telemetry/batch", {"readings": batch})
+                result = post(api, "/telemetry/batch", {"readings": batch})
+                inserted = result.get("inserted", len(batch))
+                if inserted == 0:
+                    print(f"  WARN: batch skipped (duplicates?) for {sensor['label']}", file=sys.stderr)
                 batch = []
 
         if batch:
@@ -173,6 +181,19 @@ def main():
         post(api, f"/equipment/{eq_id}/readings", {"readings": readings})
 
     seed_sensor_telemetry(api, obj["id"], now, rng, days)
+
+    sensors = get(api, f"/objects/{obj['id']}/sensors")
+    if sensors:
+        sid = sensors[0]["id"]
+        from_ts = urllib.parse.quote((now - timedelta(hours=1)).isoformat())
+        to_ts = urllib.parse.quote(now.isoformat())
+        recent = get(api, f"/telemetry/{sid}?from={from_ts}&to={to_ts}&agg=minute")
+        print(f"Verify: {len(recent)} minute-buckets in last hour for {sensors[0]['label']}")
+        if len(recent) < 30:
+            print(
+                "WARN: мало данных за последний час — график live может быть пустым до стресс-теста.",
+                file=sys.stderr,
+            )
 
     print(f"Done! Equipment ID: {eq_id}")
     print(f"Open dashboard and select: {obj['name']}")

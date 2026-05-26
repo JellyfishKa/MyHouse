@@ -108,8 +108,56 @@ const rangeToWindow = (range: string, anchor: Date) => {
 const liveWindow = (anchor: Date, minutes: number) => {
   const from = new Date(anchor);
   from.setMinutes(anchor.getMinutes() - minutes);
-  return { from, agg: 'minute' as const };
+  return { from, agg: 'raw' as const };
 };
+
+function computeBaselines(
+  rawChartData: ChartRow[],
+  sensors: ObjectSensor[],
+  stressStartedAt?: number,
+): Map<string, number> {
+  const map = new Map<string, number>();
+
+  sensors.forEach((sensor) => {
+    const values: number[] = [];
+
+    if (stressStartedAt) {
+      const preStart = stressStartedAt - 10 * 60_000;
+      rawChartData.forEach((row) => {
+        const t = new Date(String(row.time)).getTime();
+        if (t >= preStart && t < stressStartedAt) {
+          const v = row[sensor.label];
+          if (typeof v === 'number') values.push(v);
+        }
+      });
+    }
+
+    if (!values.length && stressStartedAt) {
+      const alignedStart = Math.floor(stressStartedAt / 60_000) * 60_000;
+      const earlyEnd = stressStartedAt + 3 * 60_000;
+      rawChartData.forEach((row) => {
+        const t = new Date(String(row.time)).getTime();
+        if (t >= alignedStart && t <= earlyEnd) {
+          const v = row[sensor.label];
+          if (typeof v === 'number') values.push(v);
+        }
+      });
+    }
+
+    if (!values.length) {
+      rawChartData.forEach((row) => {
+        const v = row[sensor.label];
+        if (typeof v === 'number') values.push(v);
+      });
+    }
+
+    if (values.length) {
+      map.set(sensor.label, values.reduce((a, b) => a + b, 0) / values.length);
+    }
+  });
+
+  return map;
+}
 
 const buildAnchorDate = (objectItem?: MonitoringObject) =>
   objectItem?.last_reading_at ? new Date(objectItem.last_reading_at) : new Date();
@@ -203,6 +251,10 @@ const ConsumptionChart = ({
     }
   }, [isLive]);
 
+  useEffect(() => {
+    frozenBaselinesRef.current = null;
+  }, [stressStartedAt]);
+
   const to = isLive ? liveNow : buildAnchorDate(objectItem);
 
   const { from, agg } = useMemo(() => {
@@ -246,29 +298,13 @@ const ConsumptionChart = ({
   }, [sensors, telemetryQueries]);
 
   const baselines = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!percentMode || !rawChartData.length) return map;
+    if (!percentMode || !rawChartData.length) return new Map<string, number>();
 
     if (frozenBaselinesRef.current?.size) {
       return frozenBaselinesRef.current;
     }
 
-    const baselineStartMs = stressStartedAt
-      ?? new Date(String(rawChartData[0].time)).getTime();
-    const baselineEndMs = baselineStartMs + 5 * 60_000;
-
-    sensors.forEach((sensor) => {
-      const values: number[] = [];
-      rawChartData.forEach((row) => {
-        const t = new Date(String(row.time)).getTime();
-        if (t < baselineStartMs || t > baselineEndMs) return;
-        const v = row[sensor.label];
-        if (typeof v === 'number') values.push(v);
-      });
-      if (values.length) {
-        map.set(sensor.label, values.reduce((a, b) => a + b, 0) / values.length);
-      }
-    });
+    const map = computeBaselines(rawChartData, sensors, stressStartedAt);
 
     if (stressStartedAt && map.size > 0) {
       frozenBaselinesRef.current = map;
@@ -350,10 +386,22 @@ const ConsumptionChart = ({
   if (isLoading) return <div className="chart-loading"><Spin size="large" /></div>;
   if (hasError) return <Alert type="error" message="Не удалось загрузить временной ряд" showIcon />;
 
-  if (!sensors.length || !chartData.length) {
+  if (!sensors.length || !rawChartData.length) {
     return (
       <Card className="surface-card chart-card" title="Потребление">
         <Empty description="Нет данных телеметрии. Запустите: python scripts/seed_demo.py" />
+      </Card>
+    );
+  }
+
+  const hasPlottableData = chartData.some((row) =>
+    sensors.some((s) => typeof row[s.label] === 'number'),
+  );
+
+  if (percentMode && !hasPlottableData) {
+    return (
+      <Card className="surface-card chart-card" title="Потребление — live (% от нормы)">
+        <div className="chart-loading"><Spin tip="Сбор базовой линии…" /></div>
       </Card>
     );
   }
@@ -476,7 +524,8 @@ const ConsumptionChart = ({
                     stroke={style.stroke}
                     strokeWidth={style.strokeWidth}
                     strokeDasharray={style.strokeDasharray}
-                    dot={false}
+                    dot={isLive ? { r: 2 } : false}
+                    connectNulls
                     activeDot={{ r: 4 }}
                     isAnimationActive={false}
                   />

@@ -15,6 +15,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { unlockAudio } from '../utils/alertSound';
 import ConsumptionChart from '../components/ConsumptionChart';
 import PredictiveInsightsPanel from '../components/PredictiveInsightsPanel';
 import type { AppLayoutContextValue } from '../components/MainLayout';
@@ -114,6 +115,10 @@ const Dashboard = () => {
 
   const handleStressTest = async () => {
     if (!selectedObjectId) return;
+    unlockAudio();
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      void Notification.requestPermission();
+    }
     try {
       messageApi.loading({ content: 'ML: обучение на исторических данных (7 дней)...', key: 'stress' });
       try {
