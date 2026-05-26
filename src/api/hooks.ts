@@ -51,10 +51,7 @@ export interface AlertRecord {
   acknowledged: boolean;
 }
 
-export interface AnomalyMarker {
-  time: string;
-  severity: AnomalyRecord['severity'];
-}
+export type AnomalyMarker = AnomalyRecord;
 
 export interface AggregatedReading {
   time: string;

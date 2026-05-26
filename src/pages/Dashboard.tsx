@@ -97,7 +97,7 @@ const Dashboard = () => {
     const list = stressActive && stressStartedAt
       ? anomalies.filter((a) => new Date(a.time).getTime() >= stressStartedAt - 5000)
       : anomalies;
-    return list.map((a) => ({ time: a.time, severity: a.severity }));
+    return list;
   }, [anomalies, stressActive, stressStartedAt]);
 
   const handleDetect = async () => {

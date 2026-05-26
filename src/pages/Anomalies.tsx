@@ -5,6 +5,7 @@ import { useOutletContext } from 'react-router-dom';
 import type { AppLayoutContextValue } from '../components/MainLayout';
 import { useStressTestContextOptional } from '../context/StressTestContext';
 import { useAnomalies, type AnomalyRecord } from '../api/hooks';
+import { formatAnomalyDeviation } from '../utils/anomalyUtils';
 
 const POLL_MS = 2000;
 
@@ -18,19 +19,7 @@ const severityConfig: Record<string, { color: string; label: string }> = {
 };
 
 function formatDeviation(record: AnomalyRecord) {
-  if (record.expected == null || record.expected === 0) return { text: '—', color: undefined };
-
-  const raw = ((record.value - record.expected) / Math.abs(record.expected)) * 100;
-  const capped = Math.max(-99.9, Math.min(99.9, raw));
-  const sign = capped >= 0 ? '+' : '';
-  const abs = Math.abs(capped);
-
-  let color = '#52c41a';
-  if (abs >= 30) color = '#ff4d4f';
-  else if (abs >= 15) color = '#fa8c16';
-  else if (abs >= 8) color = '#faad14';
-
-  return { text: `${sign}${capped.toFixed(1)}%`, color };
+  return formatAnomalyDeviation(record);
 }
 
 const Anomalies = () => {

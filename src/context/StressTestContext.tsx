@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Alert, Space, Tag, message } from 'antd';
+import { message } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useAnomalies,
@@ -26,13 +26,6 @@ import { useStressNotifications } from '../hooks/useStressNotifications';
 const POLL_MS = 2000;
 const STRESS_UI_BUFFER_MS = 60_000;
 const RETRAIN_STEPS = [15, 30, 60, 90];
-
-const SEVERITY_LEGEND = [
-  { key: 'low', label: 'Низкий', color: '#52c41a' },
-  { key: 'medium', label: 'Средний', color: '#faad14' },
-  { key: 'high', label: 'Высокий', color: '#fa8c16' },
-  { key: 'critical', label: 'Критический', color: '#ff4d4f' },
-];
 
 export type { StressPhaseInfo };
 
@@ -244,22 +237,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   return (
     <StressTestContext.Provider value={value}>
       {active && (
-        <div style={{ padding: '0 16px 8px' }}>
-          <Alert
-            type="warning"
-            message="Стресс-тест активен — уведомления и метрики обновляются на всех вкладках"
-            showIcon
-            banner
-          />
-          <StressTimeline startedAt={startedAt} endsAt={endsAt} tick={tick} />
-          <Space wrap size={8} style={{ marginTop: 8 }}>
-            {SEVERITY_LEGEND.map((s) => (
-              <Tag key={s.key} color={s.color} style={{ margin: 0 }}>
-                {s.label}
-              </Tag>
-            ))}
-          </Space>
-        </div>
+        <StressTimeline startedAt={startedAt} endsAt={endsAt} tick={tick} />
       )}
       {children}
     </StressTestContext.Provider>
