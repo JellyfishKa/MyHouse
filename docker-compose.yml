@@ -68,9 +68,7 @@ services:
     restart: unless-stopped
 
   ml:
-    build:
-      context: .
-      dockerfile: ml/Dockerfile
+    build: ./ml
     container_name: myhouse-ml
     environment:
       DB_HOST: postgres

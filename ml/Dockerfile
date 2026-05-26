@@ -7,11 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc \
 
 RUN mkdir -p /app/saved_models /data
 
-COPY ml/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ml/ .
-COPY data/synthetic_rul.csv /data/synthetic_rul.csv
+COPY . .
 
 RUN chmod +x /app/entrypoint.sh
 
