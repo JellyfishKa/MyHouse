@@ -1,7 +1,15 @@
 """
 Seed demo data: create Equipment for existing objects + load synthetic readings.
-Run from project root: python scripts/seed_demo.py
+
+Usage:
+  python scripts/seed_demo.py
+  python scripts/seed_demo.py --api http://localhost:8000/api/v1
+  API_URL=https://pulsetok.duckdns.org/api/v1 python scripts/seed_demo.py
+
+Production (FirstVDS):
+  DOMAIN=pulsetok.duckdns.org ./scripts/seed_production.sh
 """
+import argparse
 import os
 import sys
 import json
@@ -10,7 +18,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
 
-API = os.getenv("API_URL", "http://localhost:8000/api/v1")
+DEFAULT_API = "http://localhost:8000/api/v1"
 
 # category -> (load multiplier, noise, base watts factor)
 SENSOR_PROFILES = {
@@ -21,20 +29,31 @@ SENSOR_PROFILES = {
 }
 
 
-def post(path, body):
+def get(api: str, path: str):
+    try:
+        with urllib.request.urlopen(f"{api}{path}", timeout=30) as r:
+            return json.loads(r.read())
+    except urllib.error.URLError as exc:
+        if "Connection refused" in str(exc.reason) or "111" in str(exc):
+            print(
+                f"\nОшибка: backend недоступен по {api}\n"
+                "Локально: docker compose up -d && API_URL=http://localhost:8000/api/v1 python3 scripts/seed_demo.py\n"
+                "Production: DOMAIN=pulsetok.duckdns.org ./scripts/seed_production.sh\n"
+                "         или: API_URL=https://pulsetok.duckdns.org/api/v1 python3 scripts/seed_demo.py\n",
+                file=sys.stderr,
+            )
+        raise
+
+
+def post(api: str, path: str, body):
     data = json.dumps(body).encode()
     req = urllib.request.Request(
-        f"{API}{path}",
+        f"{api}{path}",
         data=data,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read())
-
-
-def get(path):
-    with urllib.request.urlopen(f"{API}{path}", timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=120) as r:
         return json.loads(r.read())
 
 
@@ -46,8 +65,8 @@ def daily_factor(hour: int) -> float:
     )
 
 
-def seed_sensor_telemetry(object_id: str, now: datetime, rng: random.Random) -> None:
-    sensors = get(f"/objects/{object_id}/sensors")
+def seed_sensor_telemetry(api: str, object_id: str, now: datetime, rng: random.Random) -> None:
+    sensors = get(api, f"/objects/{object_id}/sensors")
     if not sensors:
         print("No sensors found for telemetry seed.")
         return
@@ -72,17 +91,29 @@ def seed_sensor_telemetry(object_id: str, now: datetime, rng: random.Random) -> 
             })
 
             if len(batch) == 500:
-                post("/telemetry/batch", {"readings": batch})
+                post(api, "/telemetry/batch", {"readings": batch})
                 batch = []
 
         if batch:
-            post("/telemetry/batch", {"readings": batch})
+            post(api, "/telemetry/batch", {"readings": batch})
 
         print(f"  {sensor['label']}: {total_points} points")
 
 
 def main():
-    objects = get("/objects")
+    parser = argparse.ArgumentParser(description="Seed equipment + 7 days telemetry")
+    parser.add_argument(
+        "--api",
+        default=os.getenv("API_URL", DEFAULT_API),
+        help=f"Backend API base URL (default: {DEFAULT_API} or API_URL env)",
+    )
+    args = parser.parse_args()
+    api = args.api.rstrip("/")
+
+    print(f"API: {api}")
+    print("Загрузка 7 дней данных (~40k точек) — может занять 10–20 минут…")
+
+    objects = get(api, "/objects")
     if not objects:
         print("No objects found. Check backend is running.")
         sys.exit(1)
@@ -91,7 +122,7 @@ def main():
     print(f"Using object: {obj['name']} ({obj['id']})")
 
     try:
-        equipment_list = get(f"/equipment?object_id={obj['id']}")
+        equipment_list = get(api, f"/equipment?object_id={obj['id']}")
     except Exception:
         equipment_list = []
 
@@ -99,7 +130,7 @@ def main():
         eq = equipment_list[0]
         print(f"Equipment exists: {eq['name']} ({eq['id']})")
     else:
-        eq = post("/equipment", {
+        eq = post(api, "/equipment", {
             "object_id": obj["id"],
             "name": "Demo Server #1",
             "type": "server",
@@ -127,14 +158,14 @@ def main():
             "power_kw": round(max(5.0, current) * 220 / 1000, 3),
         })
         if len(readings) == 500:
-            post(f"/equipment/{eq_id}/readings", {"readings": readings})
+            post(api, f"/equipment/{eq_id}/readings", {"readings": readings})
             print(f"  Inserted {i + 1}/{total_eq_points} equipment readings...")
             readings = []
 
     if readings:
-        post(f"/equipment/{eq_id}/readings", {"readings": readings})
+        post(api, f"/equipment/{eq_id}/readings", {"readings": readings})
 
-    seed_sensor_telemetry(obj["id"], now, rng)
+    seed_sensor_telemetry(api, obj["id"], now, rng)
 
     print(f"Done! Equipment ID: {eq_id}")
     print(f"Open dashboard and select: {obj['name']}")
