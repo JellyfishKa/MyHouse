@@ -15,6 +15,7 @@
 html, body, #root {
   min-height: 100%;
   margin: 0;
+  overflow-x: hidden;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -452,6 +453,8 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   flex-direction: column;
   background: #d8ddd4;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Top bar */
@@ -732,6 +735,99 @@ a { color: inherit; text-decoration: none; }
     height: 38px !important;
     font-size: 13px !important;
   }
+
+  .hero-card__content {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 16px !important;
+  }
+
+  .predict-panel__header {
+    margin-bottom: 8px;
+  }
+
+  .predict-card__head {
+    flex-wrap: wrap;
+  }
+
+  .anomalies-toolbar {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .mobile-object-select {
+    max-width: 120px !important;
+  }
+
+  .mobile-nav-dropdown-btn {
+    padding: 6px 10px !important;
+    font-size: 14px !important;
+    max-width: 140px;
+  }
+
+  .mobile-nav-dropdown-label span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 90px;
+  }
+
+  .chart-card .ant-card-head {
+    flex-wrap: wrap;
+  }
+
+  .chart-card__controls {
+    margin-bottom: 8px;
+  }
+
+  .table-card .ant-card-head-title {
+    white-space: normal !important;
+  }
+}
+
+
+/* ─── Predictive panel ─────────────────────────────────── */
+
+.predict-panel {
+  margin-bottom: 4px;
+}
+
+.predict-panel__header {
+  margin-bottom: 12px;
+}
+
+.predict-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.predict-card__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.chart-card__meta {
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.chart-card__controls {
+  margin-bottom: 10px;
+}
+
+.anomalies-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 

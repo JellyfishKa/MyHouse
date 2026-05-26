@@ -1,4 +1,4 @@
-import { Card, Col, Collapse, Drawer, Progress, Row, Space, Statistic, Tag, Typography } from 'antd';
+import { Card, Col, Collapse, Drawer, Grid, Progress, Row, Space, Statistic, Tag, Typography } from 'antd';
 import {
   BulbOutlined,
   DashboardOutlined,
@@ -18,10 +18,14 @@ import {
   YAxis,
 } from 'recharts';
 import ConsumptionChart from './ConsumptionChart';
+import { useStressTestContextOptional } from '../context/StressTestContext';
 import { useHealthScore, useRul, type MonitoringObject, type ObjectSensor } from '../api/hooks';
 import { EQUIPMENT_PASSPORTS } from '../data/equipment-passports';
 
+const POLL_MS = 2000;
+
 const { Text, Title } = Typography;
+const { useBreakpoint } = Grid;
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: typeof ThunderboltOutlined }> = {
   servers:  { label: 'Серверы',    icon: ThunderboltOutlined },
@@ -70,11 +74,21 @@ interface EquipmentDrawerProps {
 }
 
 const EquipmentDrawer = ({ open, category, sensors, objectId, objectItem, onClose }: EquipmentDrawerProps) => {
+  const screens = useBreakpoint();
+  const stress = useStressTestContextOptional();
+  const stressActive = !!stress?.active;
+  const healthSince = stressActive && stress?.startedAt
+    ? new Date(stress.startedAt).toISOString()
+    : undefined;
   const cfg = CATEGORY_CONFIG[category] ?? { label: category, icon: DashboardOutlined };
   const Icon = cfg.icon;
 
-  const { data: health } = useHealthScore(objectId);
-  const { data: rul } = useRul(objectId);
+  const { data: health } = useHealthScore(
+    objectId,
+    stressActive ? POLL_MS : false,
+    healthSince,
+  );
+  const { data: rul } = useRul(objectId, stressActive ? POLL_MS : false);
 
   const passport = EQUIPMENT_PASSPORTS[category];
 
@@ -85,7 +99,7 @@ const EquipmentDrawer = ({ open, category, sensors, objectId, objectItem, onClos
     <Drawer
       open={open}
       onClose={onClose}
-      width={640}
+      width={screens.md ? 640 : '100%'}
       title={
         <Space>
           <Icon style={{ color: '#0f766e', fontSize: 18 }} />

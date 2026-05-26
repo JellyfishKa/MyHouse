@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Card, Col, Row, Segmented, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Button, Card, Col, Grid, Row, Segmented, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
 import {
   BulbOutlined,
   DashboardOutlined,
@@ -9,10 +9,14 @@ import {
 } from '@ant-design/icons';
 import { useOutletContext } from 'react-router-dom';
 import type { AppLayoutContextValue } from '../components/MainLayout';
+import { useStressTestContextOptional } from '../context/StressTestContext';
 import EquipmentDrawer from '../components/EquipmentDrawer';
 import { useHealthScore, useObjectSensors, useRul, useSummary, type ObjectSensor } from '../api/hooks';
 
+const POLL_MS = 2000;
+
 const { Text, Title } = Typography;
+const { useBreakpoint } = Grid;
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: typeof ThunderboltOutlined }> = {
   servers: { label: 'Серверы', icon: ThunderboltOutlined },
@@ -34,15 +38,27 @@ interface CategoryRow {
 }
 
 const Equipment = () => {
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
   const { selectedObjectId, selectedObject } = useOutletContext<AppLayoutContextValue>();
+  const stress = useStressTestContextOptional();
+  const stressActive = !!stress?.active;
+  const metricsObjectId = stressActive && stress?.objectId ? stress.objectId : selectedObjectId;
+  const healthSince = stressActive && stress?.startedAt
+    ? new Date(stress.startedAt).toISOString()
+    : undefined;
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [drawerCategory, setDrawerCategory] = useState<string | null>(null);
 
-  const { data: sensors = [], isLoading: sensorsLoading } = useObjectSensors(selectedObjectId);
-  const { data: summary = [] } = useSummary(selectedObjectId);
-  const { data: healthScore } = useHealthScore(selectedObjectId);
-  const { data: rul } = useRul(selectedObjectId);
+  const { data: sensors = [], isLoading: sensorsLoading } = useObjectSensors(metricsObjectId);
+  const { data: summary = [] } = useSummary(metricsObjectId, stressActive ? POLL_MS : false);
+  const { data: healthScore } = useHealthScore(
+    metricsObjectId,
+    stressActive ? POLL_MS : false,
+    healthSince,
+  );
+  const { data: rul } = useRul(metricsObjectId, stressActive ? POLL_MS : false);
 
   const summaryByCategory = useMemo(() => {
     const map = new Map<string, { avg: number; unit: string }>();
@@ -170,19 +186,24 @@ const Equipment = () => {
     rul?.status === 'ok' ? '#15803d' : rul?.status === 'warning' ? '#d97706' : '#d4380d';
 
   return (
-    <Space direction="vertical" size={20} style={{ width: '100%' }}>
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Row gutter={[10, 10]}>
-        <Col xs={8}>
+        <Col xs={24} sm={8}>
           <Card className="surface-card stat-card" style={{ height: '100%' }}>
             <Statistic
-              title="Health Score"
+              title={stressActive ? 'Health (сессия)' : 'Health Score'}
               value={healthScore ? `${healthScore.score}` : '—'}
               suffix={healthScore ? ` ${healthScore.grade}` : ''}
               valueStyle={{ color: healthScore ? healthColor : undefined, fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
             />
+            {stressActive && healthScore && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                C:{healthScore.critical} H:{healthScore.high} M:{healthScore.medium} L:{healthScore.low}
+              </Text>
+            )}
           </Card>
         </Col>
-        <Col xs={8}>
+        <Col xs={24} sm={8}>
           <Card className="surface-card stat-card" style={{ height: '100%' }}>
             <Statistic
               title="RUL"
@@ -192,7 +213,7 @@ const Equipment = () => {
             />
           </Card>
         </Col>
-        <Col xs={8}>
+        <Col xs={24} sm={8}>
           <Card className="surface-card stat-card" style={{ height: '100%' }}>
             <Statistic
               title="Категорий"
@@ -204,9 +225,9 @@ const Equipment = () => {
       </Row>
 
       <Card
-        className="surface-card"
+        className="surface-card table-card"
         title={<Title level={4} style={{ margin: 0 }}>Оборудование по категориям</Title>}
-        extra={
+        extra={!isMobile ? (
           <Space wrap>
             <Segmented
               options={[
@@ -226,13 +247,38 @@ const Equipment = () => {
               onChange={(v) => setStatusFilter(String(v))}
             />
           </Space>
-        }
+        ) : undefined}
       >
+        {isMobile && (
+          <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 12 }}>
+            <Select
+              style={{ width: '100%' }}
+              value={categoryFilter}
+              onChange={setCategoryFilter}
+              options={[
+                { label: 'Все категории', value: 'all' },
+                ...Object.entries(CATEGORY_CONFIG).map(([k, v]) => ({ label: v.label, value: k })),
+              ]}
+            />
+            <Select
+              style={{ width: '100%' }}
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { label: 'Все статусы', value: 'all' },
+                { label: 'Норма', value: 'ok' },
+                { label: 'Нет данных', value: 'no-data' },
+              ]}
+            />
+          </Space>
+        )}
         <Table
           columns={columns}
           dataSource={filtered}
           loading={sensorsLoading}
           pagination={false}
+          size="small"
+          scroll={{ x: 480 }}
           locale={{ emptyText: 'Нет оборудования для выбранного объекта' }}
         />
       </Card>
@@ -241,7 +287,7 @@ const Equipment = () => {
         open={!!drawerCategory}
         category={drawerCategory ?? ''}
         sensors={drawerSensors}
-        objectId={selectedObjectId}
+        objectId={metricsObjectId}
         objectItem={selectedObject}
         onClose={() => setDrawerCategory(null)}
       />

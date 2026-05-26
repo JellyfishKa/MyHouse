@@ -90,6 +90,25 @@ export interface RulPrediction {
   confidence: string;
 }
 
+export interface PredictiveInsightItem {
+  kind: string;
+  title: string;
+  summary: string;
+  horizon_days: number;
+  confidence: string;
+  impact_pct?: number | null;
+  window_label?: string | null;
+  risk_level?: string | null;
+}
+
+export interface PredictiveInsights {
+  object_id: string;
+  generated_at: string;
+  spike_risk: PredictiveInsightItem;
+  consumption_growth: PredictiveInsightItem;
+  savings_window: PredictiveInsightItem;
+}
+
 export interface EquipmentItem {
   id: string;
   object_id: string;
@@ -218,6 +237,19 @@ export function useRul(objectId?: string, refetchInterval?: number | false) {
     },
     enabled: !!objectId,
     refetchInterval: refetchInterval ?? false,
+  });
+}
+
+export function usePredictiveInsights(objectId?: string, refetchInterval?: number | false) {
+  return useQuery<PredictiveInsights>({
+    queryKey: ['predictive-insights', objectId],
+    queryFn: async () => {
+      const { data } = await api.get(`/analytics/predictions/${objectId!}`);
+      return data;
+    },
+    enabled: !!objectId,
+    refetchInterval: refetchInterval ?? false,
+    staleTime: 60_000,
   });
 }
 

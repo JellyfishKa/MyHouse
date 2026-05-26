@@ -17,6 +17,22 @@ const severityConfig: Record<string, { color: string; label: string }> = {
   critical: { color: 'red', label: 'Критический' },
 };
 
+function formatDeviation(record: AnomalyRecord) {
+  if (record.expected == null || record.expected === 0) return { text: '—', color: undefined };
+
+  const raw = ((record.value - record.expected) / Math.abs(record.expected)) * 100;
+  const capped = Math.max(-99.9, Math.min(99.9, raw));
+  const sign = capped >= 0 ? '+' : '';
+  const abs = Math.abs(capped);
+
+  let color = '#52c41a';
+  if (abs >= 30) color = '#ff4d4f';
+  else if (abs >= 15) color = '#fa8c16';
+  else if (abs >= 8) color = '#faad14';
+
+  return { text: `${sign}${capped.toFixed(1)}%`, color };
+}
+
 const Anomalies = () => {
   const { selectedObject, selectedObjectId } = useOutletContext<AppLayoutContextValue>();
   const stress = useStressTestContextOptional();
@@ -35,48 +51,51 @@ const Anomalies = () => {
         title: 'Время',
         dataIndex: 'time',
         key: 'time',
+        width: 140,
         sorter: (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
         defaultSortOrder: 'descend',
-        render: (time: string) => new Date(time).toLocaleString('ru-RU'),
+        render: (time: string) => new Date(time).toLocaleString('ru-RU', {
+          day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+        }),
       },
       {
         title: 'Сенсор',
         dataIndex: 'sensor_label',
         key: 'sensor_label',
-        render: (value?: string | null, record?: AnomalyRecord) => value || record?.category || 'unknown',
+        ellipsis: true,
+        render: (value?: string | null, record?: AnomalyRecord) => value || record?.category || '—',
       },
       {
         title: 'Уровень',
         dataIndex: 'severity',
         key: 'severity',
+        width: 100,
         render: (value: string) => {
           const config = severityConfig[value] || { color: 'default', label: value };
           return <Tag color={config.color}>{config.label}</Tag>;
         },
       },
       {
-        title: 'Факт',
+        title: 'Факт, Вт',
         dataIndex: 'value',
         key: 'value',
-        sorter: (a, b) => a.value - b.value,
-        render: (value: number) => value.toFixed(3),
+        width: 90,
+        render: (value: number) => value.toFixed(1),
       },
       {
-        title: 'Ожидание',
+        title: 'Норма, Вт',
         dataIndex: 'expected',
         key: 'expected',
-        render: (value: number | null) => (value == null ? '—' : value.toFixed(3)),
+        width: 90,
+        render: (value: number | null) => (value == null ? '—' : value.toFixed(1)),
       },
       {
-        title: 'Отклонение',
+        title: 'Δ',
         key: 'delta',
+        width: 72,
         render: (_, record) => {
-          if (record.expected == null || record.expected === 0) {
-            return '—';
-          }
-
-          const delta = ((record.value - record.expected) / Math.abs(record.expected)) * 100;
-          return `${delta.toFixed(1)}%`;
+          const { text, color } = formatDeviation(record);
+          return color ? <Text style={{ color, fontWeight: 600 }}>{text}</Text> : text;
         },
       },
     ],
@@ -87,32 +106,30 @@ const Anomalies = () => {
     return <Empty description="Нет выбранного объекта" />;
   }
 
-
   return (
-    <Space direction="vertical" size={20} style={{ width: '100%' }}>
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card className="surface-card">
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <Text className="eyebrow">Контроль качества сигнала</Text>
+          <Text className="eyebrow">Предиктивный контроль</Text>
           <Title level={2} style={{ margin: 0 }}>
             Журнал аномалий
           </Title>
           <Paragraph style={{ margin: 0 }}>
-            Показываем последние срабатывания для объекта <strong>{selectedObject.name}</strong>.
-            Фильтр по severity работает прямо от backend API.
+            Объект <strong>{selectedObject.name}</strong> — отклонения от нормы в процентах (±8…42% по severity).
           </Paragraph>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div className="anomalies-toolbar">
             <Select
               allowClear
               placeholder="Все уровни"
               value={severity}
               onChange={(value) => setSeverity(value)}
-              style={{ minWidth: 180 }}
+              style={{ minWidth: 160, flex: '1 1 160px' }}
               options={Object.entries(severityConfig).map(([value, item]) => ({
                 value,
                 label: item.label,
               }))}
             />
-            <Statistic title="Всего записей" value={data.length} />
+            <Statistic title="Записей" value={data.length} style={{ flex: '0 0 auto' }} />
           </div>
         </Space>
       </Card>
@@ -120,17 +137,19 @@ const Anomalies = () => {
       {error ? (
         <Alert type="error" message="Ошибка загрузки аномалий" showIcon />
       ) : (
-        <Card className="surface-card">
+        <Card className="surface-card table-card">
           <Table
             columns={columns}
             dataSource={data}
             loading={isLoading}
             rowKey="id"
-            pagination={{ pageSize: 12, showSizeChanger: true }}
+            size="small"
+            scroll={{ x: 520 }}
+            pagination={{ pageSize: 12, showSizeChanger: false, simple: true }}
             locale={{
               emptyText: (
                 <Empty
-                  description="Срабатываний пока нет. После запуска ML-анализ появится здесь."
+                  description="Срабатываний пока нет. Запустите ML-анализ или стресс-тест."
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                 />
               ),

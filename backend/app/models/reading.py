@@ -188,6 +188,25 @@ class RulPrediction(BaseModel):
     confidence: str
 
 
+class PredictiveInsightItem(BaseModel):
+    kind: str
+    title: str
+    summary: str
+    horizon_days: int
+    confidence: str
+    impact_pct: float | None = None
+    window_label: str | None = None
+    risk_level: str | None = None
+
+
+class PredictiveInsights(BaseModel):
+    object_id: UUID
+    generated_at: datetime
+    spike_risk: PredictiveInsightItem
+    consumption_growth: PredictiveInsightItem
+    savings_window: PredictiveInsightItem
+
+
 # === ML SERVICE RESPONSE SCHEMAS ===
 
 class EquipmentHealthML(BaseModel):

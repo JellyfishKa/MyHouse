@@ -78,6 +78,39 @@ SENSOR_PROFILES = [
     (0.15, 0.1, False),
 ]
 
+CATEGORY_BASE_W: dict[SensorCategory, tuple[float, float]] = {
+    SensorCategory.SERVERS: (220.0, 1.00),
+    SensorCategory.COOLING: (185.0, 0.60),
+    SensorCategory.UPS: (160.0, 0.35),
+    SensorCategory.LIGHTING: (80.0, 0.15),
+}
+
+_SEVERITY_FACTOR: dict[SeverityLevel, float] = {
+    SeverityLevel.LOW: 1.08,
+    SeverityLevel.MEDIUM: 1.15,
+    SeverityLevel.HIGH: 1.28,
+    SeverityLevel.CRITICAL: 1.42,
+}
+
+
+def _daily_factor(hour: int) -> float:
+    return (
+        1.0
+        + 0.28 * max(0.0, min(1.0, (hour - 7) / 3))
+        - 0.18 * max(0.0, min(1.0, (hour - 19) / 3))
+    )
+
+
+def _category_baseline_w(category: SensorCategory, hour: int) -> float:
+    base, mult = CATEGORY_BASE_W.get(category, (200.0, 1.0))
+    return base * mult * _daily_factor(hour)
+
+
+def _anomaly_values(category: SensorCategory, severity: SeverityLevel, hour: int) -> tuple[float, float]:
+    expected = _category_baseline_w(category, hour)
+    actual = expected * _SEVERITY_FACTOR.get(severity, 1.10)
+    return round(actual, 3), round(expected, 3)
+
 
 async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> None:
     from app.core.db import async_session_local
@@ -101,19 +134,22 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                 sensor_by_cat[cat] = sid
 
         while datetime.now(timezone.utc) < deadline:
-            base_current = 10.0 + step * 1.2
-            spike_amp = min(step * 2.0, 25.0)
             now = datetime.now(timezone.utc)
+            hour = now.hour
+            stress_boost = 1.0 + min(step * 0.012, 0.35)
+            spike_amp = min(step * 0.08, 0.25)
+
+            base_current = 9.0 + 2.5 * _daily_factor(hour) + step * 0.04
 
             eq_readings = [
                 EquipmentReading(
                     time=now - timedelta(seconds=i),
                     equipment_id=equipment_id,
                     current_a=round(
-                        base_current + random.gauss(0, 0.8) + (spike_amp if i < 2 else 0),
+                        base_current + random.gauss(0, 0.25) + (spike_amp if i < 2 else 0),
                         3,
                     ),
-                    voltage_v=round(random.gauss(220, 3), 2),
+                    voltage_v=round(random.gauss(220, 1.5), 2),
                     power_kw=round(base_current * 220 / 1000, 3),
                 )
                 for i in range(10)
@@ -131,12 +167,13 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                 if not sensor_id:
                     continue
                 mult, noise, can_spike = SENSOR_PROFILES[i]
-                spike = (spike_amp * mult) if (can_spike and step % 3 == 0) else 0
+                baseline = _category_baseline_w(cat, hour)
+                spike = (baseline * spike_amp * mult) if (can_spike and step % 3 == 0) else 0
                 db.add(
                     Reading(
                         time=now,
                         sensor_id=sensor_id,
-                        value=round(base_current * mult * 22 + random.gauss(0, noise) + spike, 3),
+                        value=round(baseline * stress_boost + random.gauss(0, noise * baseline * 0.02) + spike, 3),
                     )
                 )
 
@@ -153,15 +190,14 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                             )
                         )
                     elif kind == "anomaly" and category and category in sensor_by_cat:
-                        expected = 10.0 + sched_step * 0.5
-                        actual = base_current * SENSOR_PROFILES[0][0] * 22
+                        actual, expected = _anomaly_values(category, severity, hour)
                         db.add(
                             Anomaly(
                                 sensor_id=sensor_by_cat[category],
                                 detected_at=now,
                                 severity=severity,
-                                value=round(actual, 3),
-                                expected_value=round(expected, 3),
+                                value=actual,
+                                expected_value=expected,
                             )
                         )
 

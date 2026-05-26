@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone  # noqa: F401 (timezone used in health/rul)
+from datetime import datetime, timedelta, timezone
 from typing import List
 from uuid import UUID
 
@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.models.database.models import Anomaly, Reading, Sensor, SeverityLevel
-from app.models.reading import HealthScore, RulPrediction, SensorSummary
+from app.models.reading import (
+    HealthScore,
+    PredictiveInsightItem,
+    PredictiveInsights,
+    RulPrediction,
+    SensorSummary,
+)
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
 
@@ -134,4 +140,130 @@ async def get_object_rul(
         rul_days=rul_days,
         status=status,
         confidence="low",
+    )
+
+
+@router.get("/predictions/{object_id}", response_model=PredictiveInsights)
+async def get_predictive_insights(
+    object_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+    day_ago = now - timedelta(days=1)
+
+    hourly = (
+        select(
+            func.date_trunc("hour", Reading.time).label("bucket"),
+            func.avg(Reading.value).label("avg_w"),
+        )
+        .join(Sensor, Sensor.id == Reading.sensor_id)
+        .where(Sensor.object_id == object_id, Reading.time >= week_ago)
+        .group_by("bucket")
+        .order_by("bucket")
+    )
+    rows = (await db.execute(hourly)).all()
+
+    if len(rows) < 12:
+        empty = PredictiveInsightItem(
+            kind="unknown",
+            title="Недостаточно данных",
+            summary="Запустите seed_demo.py для накопления телеметрии (рекомендуется 7 дней).",
+            horizon_days=3,
+            confidence="low",
+        )
+        return PredictiveInsights(
+            object_id=object_id,
+            generated_at=now,
+            spike_risk=empty.model_copy(update={"kind": "spike_risk", "title": "Риск резкого скачка"}),
+            consumption_growth=empty.model_copy(update={"kind": "consumption_growth", "title": "Рост потребления"}),
+            savings_window=empty.model_copy(update={"kind": "savings_window", "title": "Окно экономии"}),
+        )
+
+    all_vals = [float(r.avg_w) for r in rows]
+    recent_vals = []
+    for r in rows:
+        bucket = r.bucket
+        if bucket.tzinfo is None:
+            bucket = bucket.replace(tzinfo=timezone.utc)
+        if bucket >= day_ago:
+            recent_vals.append(float(r.avg_w))
+    if not recent_vals:
+        recent_vals = all_vals[-24:]
+
+    baseline = sum(all_vals) / len(all_vals)
+    recent = sum(recent_vals) / len(recent_vals)
+    growth_pct = ((recent - baseline) / baseline * 100) if baseline > 0 else 0.0
+    projected_3d = round(growth_pct * 1.15, 1)
+
+    def _std(vals: list[float]) -> float:
+        if len(vals) < 2:
+            return 0.0
+        m = sum(vals) / len(vals)
+        return (sum((v - m) ** 2 for v in vals) / len(vals)) ** 0.5
+
+    vol_ratio = (_std(recent_vals) / _std(all_vals)) if _std(all_vals) > 0 else 1.0
+    if vol_ratio >= 1.35 or growth_pct >= 12:
+        risk_level, risk_conf = "high", "medium"
+        spike_summary = (
+            f"Волатильность за 24 ч выше базовой в {vol_ratio:.1f}×. "
+            f"Вероятность резкого отклонения в ближайшие 3 дня повышена."
+        )
+    elif vol_ratio >= 1.15 or growth_pct >= 6:
+        risk_level, risk_conf = "medium", "medium"
+        spike_summary = (
+            f"Наблюдается умеренный рост нестабильности (+{(vol_ratio - 1) * 100:.0f}% к базовой σ). "
+            f"Рекомендуется мониторинг линии серверов и охлажения."
+        )
+    else:
+        risk_level, risk_conf = "low", "high"
+        spike_summary = "Профиль нагрузки стабилен — резких скачков в ближайшие 3 дня не ожидается."
+
+    by_hour: dict[int, list[float]] = {h: [] for h in range(24)}
+    for r in rows:
+        by_hour[r.bucket.hour].append(float(r.avg_w))
+    hour_avg = {h: (sum(v) / len(v) if v else baseline) for h, v in by_hour.items()}
+    best_start = min(range(24), key=lambda h: hour_avg[h])
+    best_end = (best_start + 3) % 24
+    low_load = hour_avg[best_start]
+    savings_pct = round((baseline - low_load) / baseline * 100 * 0.15, 1) if baseline > 0 else 0.0
+    window_label = f"{best_start:02d}:00–{(best_start + 3) % 24:02d}:00"
+
+    growth_dir = "рост" if projected_3d >= 0 else "снижение"
+    growth_summary = (
+        f"Прогноз {growth_dir}a суммарного потребления на {abs(projected_3d):.1f}% "
+        f"за 3 дня (тренд по последним 24 ч vs 7-дневная база)."
+    )
+
+    return PredictiveInsights(
+        object_id=object_id,
+        generated_at=now,
+        spike_risk=PredictiveInsightItem(
+            kind="spike_risk",
+            title="Риск резкого изменения",
+            summary=spike_summary,
+            horizon_days=3,
+            confidence=risk_conf,
+            risk_level=risk_level,
+        ),
+        consumption_growth=PredictiveInsightItem(
+            kind="consumption_growth",
+            title="Прогноз потребления",
+            summary=growth_summary,
+            horizon_days=3,
+            confidence="medium" if len(rows) >= 48 else "low",
+            impact_pct=projected_3d,
+        ),
+        savings_window=PredictiveInsightItem(
+            kind="savings_window",
+            title="Окно экономии тока",
+            summary=(
+                f"Минимальная нагрузка исторически в {window_label}. "
+                f"Снижение подачи на 15% в этом окне даст ~{savings_pct:.1f}% экономии суточного бюджета."
+            ),
+            horizon_days=3,
+            confidence="medium",
+            window_label=window_label,
+            impact_pct=savings_pct,
+        ),
     )

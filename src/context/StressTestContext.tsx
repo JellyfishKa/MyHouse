@@ -27,16 +27,6 @@ const SEVERITY_LEGEND = [
   { key: 'critical', label: 'Критический', color: '#ff4d4f' },
 ];
 
-// #region agent log
-const dbg = (location: string, msg: string, data: Record<string, unknown>, hypothesisId: string) => {
-  fetch('http://127.0.0.1:7375/ingest/39631315-b50a-4bb0-b4d2-a2c4b21d8170', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dc4f99' },
-    body: JSON.stringify({ sessionId: 'dc4f99', location, message: msg, data, hypothesisId, timestamp: Date.now(), runId: 'post-fix' }),
-  }).catch(() => {});
-};
-// #endregion
-
 export interface StressTestContextValue {
   active: boolean;
   equipmentId?: string;
@@ -95,9 +85,6 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
 
   const endStressTest = useCallback(() => {
     const endedObjectId = stressObjectIdRef.current ?? objectId;
-    // #region agent log
-    dbg('StressTestContext.tsx:end', 'stress test ended', { startedAt, endedObjectId }, 'H2');
-    // #endregion
     if (endTimerRef.current) {
       window.clearTimeout(endTimerRef.current);
       endTimerRef.current = undefined;
@@ -112,7 +99,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
       void queryClient.invalidateQueries({ queryKey: ['health-score', endedObjectId] });
       void queryClient.invalidateQueries({ queryKey: ['anomalies', endedObjectId] });
     }
-  }, [startedAt, objectId, queryClient]);
+  }, [objectId, queryClient]);
 
   const startStressTest = useCallback(
     ({ equipmentId: eqId, objectId: objId, durationSeconds }: {
@@ -122,14 +109,6 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     }) => {
       const now = Date.now();
       const end = now + durationSeconds * 1000 + STRESS_UI_BUFFER_MS;
-      // #region agent log
-      dbg('StressTestContext.tsx:start', 'stress test started at layout', {
-        equipmentId: eqId,
-        objectId: objId,
-        durationSeconds,
-        endsAt: end,
-      }, 'H2');
-      // #endregion
       if (endTimerRef.current) window.clearTimeout(endTimerRef.current);
       stressObjectIdRef.current = objId;
       setEquipmentId(eqId);

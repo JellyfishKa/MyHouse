@@ -52,8 +52,8 @@ def seed_sensor_telemetry(object_id: str, now: datetime, rng: random.Random) -> 
         print("No sensors found for telemetry seed.")
         return
 
-    print(f"Seeding sensor telemetry for {len(sensors)} sensors (3 days, 1/min)...")
-    total_points = 4320
+    print(f"Seeding sensor telemetry for {len(sensors)} sensors (7 days, 1/min)...")
+    total_points = 10080
 
     for sensor in sensors:
         category = sensor.get("category", "servers")
@@ -112,10 +112,11 @@ def main():
     now = datetime.now(timezone.utc)
     rng = random.Random(42)
 
-    print("Generating 3 days of equipment readings (4320 points)...")
+    print("Generating 7 days of equipment readings (10080 points)...")
     readings = []
-    for i in range(4320):
-        ts = now - timedelta(minutes=4320 - i)
+    total_eq_points = 10080
+    for i in range(total_eq_points):
+        ts = now - timedelta(minutes=total_eq_points - i)
         hour = ts.hour
         base = 9.0 + 2.5 * max(0, min(1, (hour - 7) / 3)) - 1.5 * max(0, min(1, (hour - 19) / 3))
         current = base + rng.gauss(0, 0.3)
@@ -127,7 +128,7 @@ def main():
         })
         if len(readings) == 500:
             post(f"/equipment/{eq_id}/readings", {"readings": readings})
-            print(f"  Inserted {i + 1}/4320 equipment readings...")
+            print(f"  Inserted {i + 1}/{total_eq_points} equipment readings...")
             readings = []
 
     if readings:

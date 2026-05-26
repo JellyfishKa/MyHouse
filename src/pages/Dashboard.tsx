@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import {
   Button,
   Card,
@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import ConsumptionChart from '../components/ConsumptionChart';
+import PredictiveInsightsPanel from '../components/PredictiveInsightsPanel';
 import type { AppLayoutContextValue } from '../components/MainLayout';
 import SummaryCards from '../components/SummaryCards';
 import { useStressTestContext } from '../context/StressTestContext';
@@ -30,16 +31,6 @@ import {
 } from '../api/hooks';
 
 const POLL_MS = 2000;
-
-// #region agent log
-const dbg = (location: string, message: string, data: Record<string, unknown>, hypothesisId: string) => {
-  fetch('http://127.0.0.1:7375/ingest/39631315-b50a-4bb0-b4d2-a2c4b21d8170', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dc4f99' },
-    body: JSON.stringify({ sessionId: 'dc4f99', location, message, data, hypothesisId, timestamp: Date.now() }),
-  }).catch(() => {});
-};
-// #endregion
 
 const { Text, Title } = Typography;
 
@@ -76,21 +67,6 @@ const Dashboard = () => {
 
   const metricsObjectId = stressActive && stressObjectId ? stressObjectId : selectedObjectId;
 
-  useEffect(() => {
-    // #region agent log
-    dbg('Dashboard.tsx:mount', 'Dashboard mounted', {}, 'H2');
-    return () => {
-      dbg('Dashboard.tsx:unmount', 'Dashboard unmounted', { stressActive }, 'H2');
-    };
-    // #endregion
-  }, []);
-
-  useEffect(() => {
-    // #region agent log
-    dbg('Dashboard.tsx:stressActive', 'stressActive changed', { stressActive, stressStartedAt }, 'H2');
-    // #endregion
-  }, [stressActive, stressStartedAt]);
-
   const healthSince = stressActive && stressStartedAt
     ? new Date(stressStartedAt).toISOString()
     : undefined;
@@ -107,21 +83,6 @@ const Dashboard = () => {
     undefined,
     stressActive ? POLL_MS : false,
   );
-
-  const prevHealthRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!healthScore) return;
-    const snap = JSON.stringify({ score: healthScore.score, grade: healthScore.grade, c: healthScore.critical, h: healthScore.high, m: healthScore.medium, l: healthScore.low });
-    if (snap !== prevHealthRef.current) {
-      prevHealthRef.current = snap;
-      // #region agent log
-      dbg('Dashboard.tsx:healthScore', 'health score update', {
-        stressActive,
-        ...healthScore,
-      }, 'H4');
-      // #endregion
-    }
-  }, [healthScore, stressActive]);
 
   const detectMutation = useTriggerDetection();
   const stressMutation = useStressTest();
@@ -152,6 +113,23 @@ const Dashboard = () => {
   const handleStressTest = async () => {
     if (!selectedObjectId) return;
     try {
+      messageApi.loading({ content: 'ML: обучение на исторических данных (7 дней)...', key: 'stress' });
+      try {
+        const mlResult = await detectMutation.mutateAsync({ object_id: selectedObjectId, days: 7 });
+        await queryClient.invalidateQueries({ queryKey: ['anomalies', selectedObjectId] });
+        messageApi.success({
+          content: `ML готов: найдено ${mlResult.anomalies_found}, базовая модель обновлена`,
+          key: 'stress',
+          duration: 3,
+        });
+      } catch {
+        messageApi.warning({
+          content: 'ML недоступен — стресс-тест запустится по демо-сценарию',
+          key: 'stress',
+          duration: 3,
+        });
+      }
+
       const result = await stressMutation.mutateAsync({
         object_id: selectedObjectId,
         duration_seconds: 300,
@@ -163,7 +141,7 @@ const Dashboard = () => {
       });
       messageApi.warning('Стресс-тест запущен на 5 минут — следите за уведомлениями');
     } catch (error) {
-      messageApi.error(`Не удалось запустить стресс-тест: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+      messageApi.error({ content: `Не удалось запустить стресс-тест: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`, key: 'stress' });
     }
   };
 
@@ -242,8 +220,13 @@ const Dashboard = () => {
 
       {selectedObject && (
         <>
+          <PredictiveInsightsPanel
+            objectId={metricsObjectId}
+            refetchInterval={stressActive ? POLL_MS * 5 : 120_000}
+          />
+
           <Row gutter={[10, 10]}>
-            <Col xs={8} md={8}>
+            <Col xs={24} sm={8}>
               <Card className="surface-card stat-card" style={{ height: '100%' }}>
                 {healthLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
                   <Statistic
@@ -260,7 +243,7 @@ const Dashboard = () => {
                 )}
               </Card>
             </Col>
-            <Col xs={8} md={8}>
+            <Col xs={24} sm={8}>
               <Card className="surface-card stat-card" style={{ height: '100%' }}>
                 {summaryLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
                   <Statistic
@@ -272,7 +255,7 @@ const Dashboard = () => {
                 )}
               </Card>
             </Col>
-            <Col xs={8} md={8}>
+            <Col xs={24} sm={8}>
               <Card className="surface-card stat-card" style={{ height: '100%' }}>
                 {rulLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
                   <Statistic
