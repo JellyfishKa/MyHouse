@@ -50,7 +50,8 @@ class Object(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     type: Mapped[ObjectType] = mapped_column(
-        ENUM(ObjectType, name="object_type_enum", create_type=True),
+        ENUM(ObjectType, name="object_type_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]),
         nullable=False
     )
     meta_data: Mapped[dict[str, Any]] = mapped_column(
@@ -89,7 +90,8 @@ class Anomaly(Base):
     )
 
     severity: Mapped[SeverityLevel] = mapped_column(
-        ENUM(SeverityLevel, name="severity_level_enum", create_type=True),
+        ENUM(SeverityLevel, name="severity_level_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]),
         nullable=False
     )
 
@@ -117,15 +119,13 @@ class Sensor(Base):
         nullable=False
     )
     type: Mapped[SensorType] = mapped_column(
-        ENUM(SensorType, name="sensor_type_enum", create_type=True),
+        ENUM(SensorType, name="sensor_type_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]),
         nullable=False
     )
     category: Mapped[SensorCategory] = mapped_column(
-        ENUM(
-            SensorCategory,
-            name="sensor_category_enum",
-            create_type=True
-        ),
+        ENUM(SensorCategory, name="sensor_category_enum", create_type=False,
+             values_callable=lambda x: [e.value for e in x]),
         nullable=False
     )
     label: Mapped[str] = mapped_column(String, nullable=False)
