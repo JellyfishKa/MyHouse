@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
@@ -28,7 +29,14 @@ from app.models.reading import (
     StressTestRequest,
     StressTestResponse,
 )
-from app.services.stress_state import clear_stress, set_stress_step
+from app.services.stress_state import (
+    begin_stress_session,
+    clear_stress,
+    get_stress_session,
+    request_stress_cancel,
+    session_is_active,
+    set_stress_step,
+)
 
 router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
 
@@ -314,11 +322,14 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
             if object_id:
                 _active_stress_objects.add(object_id)
 
-            while (
-                datetime.now(timezone.utc) < deadline
-                and object_id not in _stress_cancel_objects
-            ):
+            while True:
                 now = datetime.now(timezone.utc)
+                if now >= deadline or object_id in _stress_cancel_objects:
+                    break
+                if object_id:
+                    live_session = await get_stress_session(db, object_id)
+                    if live_session and live_session.cancelled_at is not None:
+                        break
                 hour = now.hour
                 base_current = 9.0 + 2.5 * _daily_factor(hour)
 
@@ -431,11 +442,21 @@ async def run_stress_test(
             raise HTTPException(status_code=404, detail="Equipment not found")
         lock_object_id = item.object_id
 
-    if lock_object_id in _active_stress_objects:
-        raise HTTPException(
-            status_code=409,
-            detail="Stress test already running for this object",
+    existing = await get_stress_session(db, lock_object_id)
+    if existing and session_is_active(existing):
+        started = existing.started_at
+        if started and started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        return StressTestResponse(
+            status="joined",
+            equipment_id=existing.equipment_id or equipment_id,
+            duration_seconds=existing.duration_seconds or payload.duration_seconds,
+            started_at=started,
+            step=existing.step,
         )
+
+    if lock_object_id in _active_stress_objects:
+        _active_stress_objects.discard(lock_object_id)
 
     if equipment_id in _active_stress_workers:
         raise HTTPException(
@@ -443,14 +464,38 @@ async def run_stress_test(
             detail="Stress test already running for this equipment",
         )
 
+    try:
+        await begin_stress_session(db, lock_object_id, equipment_id, payload.duration_seconds)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing = await get_stress_session(db, lock_object_id)
+        if existing and session_is_active(existing):
+            started = existing.started_at
+            if started and started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            return StressTestResponse(
+                status="joined",
+                equipment_id=existing.equipment_id or equipment_id,
+                duration_seconds=existing.duration_seconds or payload.duration_seconds,
+                started_at=started,
+                step=existing.step,
+            )
+        raise HTTPException(status_code=409, detail="Stress test already running") from None
+
     background_tasks.add_task(
         _stress_test_worker, equipment_id, payload.duration_seconds
     )
+
+    session = await get_stress_session(db, lock_object_id)
+    started = session.started_at if session else datetime.now(timezone.utc)
 
     return StressTestResponse(
         status="started",
         equipment_id=equipment_id,
         duration_seconds=payload.duration_seconds,
+        started_at=started,
+        step=0,
     )
 
 
@@ -460,11 +505,14 @@ async def cancel_stress_test(
     db: AsyncSession = Depends(get_db),
 ):
     object_id = payload.object_id
-    if object_id not in _active_stress_objects:
+    session = await get_stress_session(db, object_id)
+    if not session_is_active(session) and object_id not in _active_stress_objects:
         await clear_stress(db, object_id)
         await db.commit()
         return StressCancelResponse(status="not_running", object_id=object_id)
 
+    await request_stress_cancel(db, object_id)
+    await db.commit()
     _stress_cancel_objects.add(object_id)
     return StressCancelResponse(status="cancelling", object_id=object_id)
 
@@ -474,13 +522,21 @@ async def get_stress_status(
     object_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.stress_state import get_stress_session
-
-    active = object_id in _active_stress_objects
     session = await get_stress_session(db, object_id)
+    active = session_is_active(session) or object_id in _active_stress_objects
+    ends_at = None
+    if session and session.started_at:
+        started = session.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        duration = session.duration_seconds or STRESS_DEFAULT_DURATION_SEC
+        ends_at = started + timedelta(seconds=duration)
     return StressStatusResponse(
         active=active,
         object_id=object_id,
         equipment_id=session.equipment_id if session else None,
         step=session.step if session else None,
+        started_at=session.started_at if session else None,
+        duration_seconds=session.duration_seconds if session else None,
+        ends_at=ends_at,
     )

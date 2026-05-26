@@ -288,6 +288,18 @@ export interface StressTestResponse {
   status: string;
   equipment_id: string;
   duration_seconds: number;
+  started_at?: string;
+  step?: number;
+}
+
+export interface StressStatusResponse {
+  active: boolean;
+  object_id: string;
+  equipment_id?: string;
+  step?: number;
+  started_at?: string;
+  duration_seconds?: number;
+  ends_at?: string;
 }
 
 export interface StressCancelResponse {
@@ -301,6 +313,18 @@ export function useStressTest() {
       const { data } = await api.post('/demo/stress-test', payload);
       return data;
     },
+  });
+}
+
+export function useStressStatus(objectId?: string, pollMs: number | false = false) {
+  return useQuery({
+    queryKey: ['stress-status', objectId],
+    queryFn: async () => {
+      const { data } = await api.get<StressStatusResponse>(`/demo/stress-status/${objectId}`);
+      return data;
+    },
+    enabled: Boolean(objectId),
+    refetchInterval: pollMs || false,
   });
 }
 

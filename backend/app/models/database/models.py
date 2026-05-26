@@ -280,6 +280,15 @@ class StressSession(Base):
     equipment_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("equipment.id", ondelete="SET NULL"), nullable=True
     )
+    started_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    duration_seconds: Mapped[int | None] = mapped_column(
+        default=180, server_default="180", nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )

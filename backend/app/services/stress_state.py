@@ -1,18 +1,54 @@
 """Live stress-test step tracker (PostgreSQL-backed for multi-worker prod)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database.models import StressSession
 from app.models.reading import PredictiveInsightItem, PredictiveInsights
 
+STRESS_DEFAULT_DURATION_SEC = 180
+
 # L1 cache — same worker reads after write; DB is source of truth across workers.
 _stress_steps: dict[UUID, int] = {}
+
+
+def _ensure_tz(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def session_is_active(session: StressSession | None, *, now: datetime | None = None) -> bool:
+    if session is None or session.cancelled_at is not None or session.started_at is None:
+        return False
+    started = _ensure_tz(session.started_at)
+    duration = session.duration_seconds or STRESS_DEFAULT_DURATION_SEC
+    current = now or datetime.now(timezone.utc)
+    return current < started + timedelta(seconds=duration)
+
+
+async def begin_stress_session(
+    db: AsyncSession,
+    object_id: UUID,
+    equipment_id: UUID,
+    duration_seconds: int,
+) -> datetime:
+    now = datetime.now(timezone.utc)
+    _stress_steps[object_id] = 0
+    stmt = insert(StressSession).values(
+        object_id=object_id,
+        step=0,
+        equipment_id=equipment_id,
+        started_at=now,
+        duration_seconds=duration_seconds,
+        cancelled_at=None,
+        updated_at=now,
+    )
+    await db.execute(stmt)
+    return now
 
 
 async def set_stress_step(
@@ -22,20 +58,31 @@ async def set_stress_step(
     equipment_id: UUID | None = None,
 ) -> None:
     _stress_steps[object_id] = step
-    stmt = insert(StressSession).values(
-        object_id=object_id,
-        step=step,
-        equipment_id=equipment_id,
-        updated_at=datetime.now(timezone.utc),
-    ).on_conflict_do_update(
+    values: dict = {
+        "object_id": object_id,
+        "step": step,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if equipment_id is not None:
+        values["equipment_id"] = equipment_id
+    stmt = insert(StressSession).values(**values).on_conflict_do_update(
         index_elements=["object_id"],
         set_={
             "step": step,
-            "equipment_id": equipment_id,
             "updated_at": datetime.now(timezone.utc),
+            **({"equipment_id": equipment_id} if equipment_id is not None else {}),
         },
     )
     await db.execute(stmt)
+
+
+async def request_stress_cancel(db: AsyncSession, object_id: UUID) -> None:
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        update(StressSession)
+        .where(StressSession.object_id == object_id)
+        .values(cancelled_at=now, updated_at=now)
+    )
 
 
 async def clear_stress(db: AsyncSession, object_id: UUID) -> None:

@@ -254,9 +254,11 @@ class StressTestRequest(BaseModel):
 
 
 class StressTestResponse(BaseModel):
-    status: str
+    status: str  # started | joined
     equipment_id: UUID
     duration_seconds: int
+    started_at: datetime | None = None
+    step: int | None = None
 
 
 class StressCancelRequest(BaseModel):
@@ -273,3 +275,6 @@ class StressStatusResponse(BaseModel):
     object_id: UUID
     equipment_id: UUID | None = None
     step: int | None = None
+    started_at: datetime | None = None
+    duration_seconds: int | None = None
+    ends_at: datetime | None = None

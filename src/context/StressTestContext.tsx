@@ -15,6 +15,7 @@ import {
   useCancelStressTest,
   useEquipmentAlerts,
   useRetrainMl,
+  useStressStatus,
   type AnomalyRecord,
 } from '../api/hooks';
 import StressTimeline, {
@@ -34,6 +35,7 @@ export type { StressPhaseInfo };
 
 export interface StressTestContextValue {
   active: boolean;
+  isInitiator: boolean;
   equipmentId?: string;
   startedAt?: number;
   endsAt?: number;
@@ -46,8 +48,11 @@ export interface StressTestContextValue {
     equipmentId: string;
     objectId: string;
     durationSeconds: number;
+    startedAt?: number;
+    serverStep?: number;
+    initiator?: boolean;
   }) => void;
-  endStressTest: () => void;
+  endStressTest: (options?: { localOnly?: boolean }) => void;
 }
 
 const StressTestContext = createContext<StressTestContextValue | null>(null);
@@ -67,6 +72,16 @@ interface StressTestProviderProps {
   children: ReactNode;
 }
 
+function scheduleEndTimer(
+  endTimerRef: React.MutableRefObject<number | undefined>,
+  endsAt: number,
+  onEnd: () => void,
+) {
+  if (endTimerRef.current) window.clearTimeout(endTimerRef.current);
+  const delay = Math.max(0, endsAt - Date.now() + STRESS_END_GRACE_MS);
+  endTimerRef.current = window.setTimeout(onEnd, delay);
+}
+
 export function StressTestProvider({ objectId, children }: StressTestProviderProps) {
   const queryClient = useQueryClient();
   const { clearLog, entries } = useNotificationLog();
@@ -78,13 +93,20 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   const retrainChainRef = useRef(Promise.resolve());
   const startedAtRef = useRef<number | undefined>(undefined);
   const durationSecRef = useRef(180);
+  const isInitiatorRef = useRef(false);
+  const autoJoinAttemptedRef = useRef<string | undefined>(undefined);
 
   const [active, setActive] = useState(false);
+  const [isInitiator, setIsInitiator] = useState(false);
   const [equipmentId, setEquipmentId] = useState<string>();
   const [startedAt, setStartedAt] = useState<number>();
   const [endsAt, setEndsAt] = useState<number>();
   const [stressObjectId, setStressObjectId] = useState<string>();
+  const [serverStep, setServerStep] = useState<number>();
   const [tick, setTick] = useState(0);
+
+  const statusPollMs = objectId ? POLL_MS : false;
+  const { data: remoteStatus } = useStressStatus(objectId, statusPollMs);
 
   const pollObjectId = active ? (stressObjectId ?? objectId) : objectId;
 
@@ -98,15 +120,16 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     active ? POLL_MS : false,
   );
 
-  const stressPhase = useMemo(() => {
-    if (!active || !startedAt) return undefined;
-    return computeStressPhase(computeStressStep(startedAt));
-  }, [active, startedAt, tick]);
-
   const stressStep = useMemo(() => {
     if (!active || !startedAt) return undefined;
+    if (serverStep != null) return serverStep;
     return computeStressStep(startedAt);
-  }, [active, startedAt, tick]);
+  }, [active, startedAt, serverStep, tick]);
+
+  const stressPhase = useMemo(() => {
+    if (!active || stressStep == null) return undefined;
+    return computeStressPhase(stressStep);
+  }, [active, stressStep, tick]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -119,8 +142,35 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     return () => document.body.classList.remove('stress-active');
   }, [active]);
 
+  useEffect(() => {
+    if (remoteStatus?.step != null && active) {
+      setServerStep(remoteStatus.step);
+    }
+  }, [remoteStatus?.step, active]);
+
+  const endStressTestLocal = useCallback(() => {
+    if (endTimerRef.current) {
+      window.clearTimeout(endTimerRef.current);
+      endTimerRef.current = undefined;
+    }
+    stressObjectIdRef.current = undefined;
+    retrainDoneRef.current.clear();
+    startedAtRef.current = undefined;
+    isInitiatorRef.current = false;
+    autoJoinAttemptedRef.current = undefined;
+    setActive(false);
+    setIsInitiator(false);
+    setEquipmentId(undefined);
+    setStartedAt(undefined);
+    setEndsAt(undefined);
+    setStressObjectId(undefined);
+    setServerStep(undefined);
+    setTick(0);
+  }, []);
+
   const runRetrain = useCallback(
     async (days: number, _step?: number, showToast = true) => {
+      if (!isInitiatorRef.current) return;
       const targetId = stressObjectIdRef.current ?? objectId;
       if (!targetId) return;
       try {
@@ -153,32 +203,22 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     [runRetrain],
   );
 
-  const endStressTest = useCallback(() => {
+  const endStressTest = useCallback((options?: { localOnly?: boolean }) => {
     const endedObjectId = stressObjectIdRef.current ?? objectId;
     const endedStartedAt = startedAtRef.current;
     const pendingRetrain = retrainChainRef.current;
+    const wasInitiator = isInitiatorRef.current;
+    const localOnly = options?.localOnly ?? false;
 
-    if (endedObjectId) {
+    if (endedObjectId && wasInitiator && !localOnly) {
       void cancelStressMutation.mutateAsync({ object_id: endedObjectId }).catch(() => {
-        /* backend offline — local reset still proceeds */
+        /* backend offline */
       });
     }
 
-    if (endTimerRef.current) {
-      window.clearTimeout(endTimerRef.current);
-      endTimerRef.current = undefined;
-    }
-    stressObjectIdRef.current = undefined;
-    retrainDoneRef.current.clear();
-    startedAtRef.current = undefined;
-    setActive(false);
-    setEquipmentId(undefined);
-    setStartedAt(undefined);
-    setEndsAt(undefined);
-    setStressObjectId(undefined);
-    setTick(0);
+    endStressTestLocal();
 
-    if (endedObjectId) {
+    if (endedObjectId && wasInitiator && !localOnly) {
       const excludeSince = endedStartedAt
         ? new Date(endedStartedAt).toISOString()
         : undefined;
@@ -193,7 +233,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
             message.warning('Финальный ML retrain: модель не сохранена (мало данных)');
           }
         } catch {
-          /* ML offline — ignore */
+          /* ML offline */
         }
         void queryClient.invalidateQueries({ queryKey: ['health-score', endedObjectId] });
         void queryClient.invalidateQueries({ queryKey: ['anomalies', endedObjectId] });
@@ -201,35 +241,57 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
         void queryClient.invalidateQueries({ queryKey: ['summary', endedObjectId] });
         void queryClient.invalidateQueries({ queryKey: ['rul', endedObjectId] });
         void queryClient.invalidateQueries({ queryKey: ['telemetry'] });
+        void queryClient.invalidateQueries({ queryKey: ['stress-status', endedObjectId] });
       });
     }
-  }, [objectId, queryClient, retrainMutation, cancelStressMutation]);
+  }, [objectId, queryClient, retrainMutation, cancelStressMutation, endStressTestLocal]);
 
   const startStressTest = useCallback(
-    ({ equipmentId: eqId, objectId: objId, durationSeconds }: {
+    ({
+      equipmentId: eqId,
+      objectId: objId,
+      durationSeconds,
+      startedAt: serverStartedAt,
+      serverStep: initialStep,
+      initiator = true,
+    }: {
       equipmentId: string;
       objectId: string;
       durationSeconds: number;
+      startedAt?: number;
+      serverStep?: number;
+      initiator?: boolean;
     }) => {
-      const now = Date.now();
+      const start = serverStartedAt ?? Date.now();
       durationSecRef.current = durationSeconds;
-      const end = now + durationSeconds * 1000;
-      if (endTimerRef.current) window.clearTimeout(endTimerRef.current);
+      const end = start + durationSeconds * 1000;
+
       stressObjectIdRef.current = objId;
-      retrainDoneRef.current.clear();
-      retrainChainRef.current = Promise.resolve();
-      startedAtRef.current = now;
-      clearLog();
+      isInitiatorRef.current = initiator;
+      autoJoinAttemptedRef.current = objId;
+
+      if (initiator) {
+        retrainDoneRef.current.clear();
+        retrainChainRef.current = Promise.resolve();
+        clearLog();
+      }
+
+      startedAtRef.current = start;
       setEquipmentId(eqId);
       setStressObjectId(objId);
-      setStartedAt(now);
+      setStartedAt(start);
       setEndsAt(end);
+      setServerStep(initialStep);
+      setIsInitiator(initiator);
       setActive(true);
       setTick(0);
-      endTimerRef.current = window.setTimeout(() => {
-        endStressTest();
-        message.info('Стресс-тест завершён');
-      }, end - now + STRESS_END_GRACE_MS);
+
+      scheduleEndTimer(endTimerRef, end, () => {
+        endStressTest({ localOnly: !isInitiatorRef.current });
+        if (isInitiatorRef.current) {
+          message.info('Стресс-тест завершён');
+        }
+      });
     },
     [endStressTest, clearLog],
   );
@@ -239,15 +301,47 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   }, []);
 
   useEffect(() => {
+    if (!remoteStatus?.active) {
+      autoJoinAttemptedRef.current = undefined;
+    }
+  }, [remoteStatus?.active]);
+
+  useEffect(() => {
+    if (active || !objectId || !remoteStatus?.active) return;
+    if (autoJoinAttemptedRef.current === objectId) return;
+    if (!remoteStatus.equipment_id || !remoteStatus.started_at) return;
+
+    autoJoinAttemptedRef.current = objectId;
+    const start = new Date(remoteStatus.started_at).getTime();
+    startStressTest({
+      equipmentId: remoteStatus.equipment_id,
+      objectId,
+      durationSeconds: remoteStatus.duration_seconds ?? 180,
+      startedAt: start,
+      serverStep: remoteStatus.step,
+      initiator: false,
+    });
+    message.info('Подключились к общему стресс-тесту');
+  }, [active, objectId, remoteStatus, startStressTest]);
+
+  useEffect(() => {
+    if (!active || !stressObjectId) return;
+    if (remoteStatus?.active === false) {
+      endStressTestLocal();
+      void queryClient.invalidateQueries({ queryKey: ['stress-status', stressObjectId] });
+    }
+  }, [active, remoteStatus?.active, stressObjectId, endStressTestLocal, queryClient]);
+
+  useEffect(() => {
     if (!active || !startedAt) return;
-    const step = computeStressStep(startedAt);
+    const step = serverStep ?? computeStressStep(startedAt);
     for (const s of RETRAIN_STEPS) {
       if (step >= s && !retrainDoneRef.current.has(s)) {
         retrainDoneRef.current.add(s);
         enqueueRetrain(30, s);
       }
     }
-  }, [active, startedAt, tick, enqueueRetrain]);
+  }, [active, startedAt, serverStep, tick, enqueueRetrain]);
 
   useStressNotifications({
     active,
@@ -259,6 +353,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   const value = useMemo<StressTestContextValue>(
     () => ({
       active,
+      isInitiator,
       equipmentId,
       startedAt,
       endsAt,
@@ -270,7 +365,21 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
       startStressTest,
       endStressTest,
     }),
-    [active, equipmentId, startedAt, endsAt, stressObjectId, objectId, stressPhase, stressStep, tick, anomalies, startStressTest, endStressTest],
+    [
+      active,
+      isInitiator,
+      equipmentId,
+      startedAt,
+      endsAt,
+      stressObjectId,
+      objectId,
+      stressPhase,
+      stressStep,
+      tick,
+      anomalies,
+      startStressTest,
+      endStressTest,
+    ],
   );
 
   return (

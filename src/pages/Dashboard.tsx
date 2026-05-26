@@ -52,6 +52,7 @@ const Dashboard = () => {
     useOutletContext<AppLayoutContextValue>();
   const {
     active: stressActive,
+    isInitiator: stressInitiator,
     startedAt: stressStartedAt,
     objectId: stressObjectId,
     stressPhase,
@@ -116,19 +117,25 @@ const Dashboard = () => {
         object_id: selectedObjectId,
         duration_seconds: 180,
       });
+      const startedAt = result.started_at
+        ? new Date(result.started_at).getTime()
+        : Date.now();
       startStressTest({
         equipmentId: result.equipment_id,
         objectId: selectedObjectId,
         durationSeconds: result.duration_seconds,
+        startedAt,
+        serverStep: result.step,
+        initiator: result.status === 'started',
       });
-      messageApi.warning('Стресс-тест · 3 мин = 30 сут — следите за уведомлениями и прогнозом');
+      if (result.status === 'joined') {
+        messageApi.info('Подключились к общему стресс-тесту — все видят одну демонстрацию');
+      } else {
+        messageApi.warning('Стресс-тест · 3 мин = 30 сут — все пользователи видят общую сессию');
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Неизвестная ошибка';
-      if (msg.includes('409') || msg.toLowerCase().includes('already running')) {
-        messageApi.warning('Стресс-тест уже выполняется');
-      } else {
-        messageApi.error({ content: `Не удалось запустить стресс-тест: ${msg}`, key: 'stress' });
-      }
+      messageApi.error({ content: `Не удалось запустить стресс-тест: ${msg}`, key: 'stress' });
     }
   };
 
@@ -194,9 +201,15 @@ const Dashboard = () => {
               {stressActive ? 'Активен...' : 'Стресс-тест'}
             </Button>
             {stressActive && (
-              <Button size="large" onClick={endStressTest}>
-                Остановить
+              <Button
+                size="large"
+                onClick={() => endStressTest({ localOnly: !stressInitiator })}
+              >
+                {stressInitiator ? 'Остановить для всех' : 'Отключиться'}
               </Button>
+            )}
+            {stressActive && !stressInitiator && (
+              <Tag color="processing">Общая сессия · наблюдатель</Tag>
             )}
           </Space>
         </div>
