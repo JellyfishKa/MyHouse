@@ -1,5 +1,18 @@
 /** Mirrors backend demo.py step thresholds (1 step = 2 s). */
 export const STRESS_TICK_SEC = 2;
+export const STRESS_DURATION_SEC = 180;
+export const STRESS_TOTAL_STEPS = STRESS_DURATION_SEC / STRESS_TICK_SEC; // 90
+/** За 3 мин стресс-теста «проходит» 30 симулированных суток. */
+export const SIM_DAYS = 30;
+export const SEED_DAYS_DEFAULT = 45;
+
+export function stepToSimDay(step: number): number {
+  return (step / STRESS_TOTAL_STEPS) * SIM_DAYS;
+}
+
+export function simDayToStep(day: number): number {
+  return (day / SIM_DAYS) * STRESS_TOTAL_STEPS;
+}
 
 export const STRESS_S = {
   spike_predict: 1,

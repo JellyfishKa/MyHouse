@@ -26,10 +26,13 @@ import { computeStressBands, type StressBand } from '../constants/stressSteps';
 import {
   buildForecastExtension,
   mergeActualAndForecast,
-  formatForecastDuration,
+  eventDayRangeLabel,
+  formatSimDayLabel,
   type ForecastMarker,
+  type ForecastMeta,
   type ForecastZone,
 } from '../utils/forecastChartUtils';
+import { SIM_DAYS } from '../constants/stressSteps';
 
 const CHART_HEIGHT = 380;
 const CHART_HEIGHT_MOBILE = 260;
@@ -257,6 +260,7 @@ interface ChartCanvasProps {
   forecastEndTime?: string;
   forecastZones?: ForecastZone[];
   forecastMarkers?: ForecastMarker[];
+  forecastMeta?: ForecastMeta | null;
   showForecast?: boolean;
   plottedAnomalies: PlottedAnomaly[];
   onAnomalyClick: (anomaly: AnomalyMarker) => void;
@@ -278,26 +282,30 @@ const ChartCanvas = memo(function ChartCanvas({
   forecastEndTime,
   forecastZones,
   forecastMarkers,
+  forecastMeta,
   showForecast,
   plottedAnomalies,
   onAnomalyClick,
 }: ChartCanvasProps) {
+  const forecastNowMs = forecastNowTime ? new Date(forecastNowTime).getTime() : 0;
+
   return (
     <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -8, bottom: 4 }}>
           <CartesianGrid stroke="#d7e3e0" strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="time"
-            minTickGap={isMobile ? 48 : 36}
+            minTickGap={isMobile ? 40 : 28}
             tick={{ fontSize: isMobile ? 10 : 11 }}
-            tickFormatter={(v) =>
-              new Date(v).toLocaleString('ru-RU', {
-                day: '2-digit',
-                month: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-            }
+            tickFormatter={(v) => {
+              const t = new Date(v).getTime();
+              if (showForecast && forecastMeta && forecastNowMs && t >= forecastNowMs - 1000) {
+                const offsetDay = ((t - forecastNowMs) / forecastMeta.remainingStressMs) * forecastMeta.remainingSimDays;
+                const simDay = forecastMeta.currentSimDay + offsetDay;
+                return `Д${simDay.toFixed(0)}`;
+              }
+              return new Date(v).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }}
           />
           <YAxis
             unit={percentMode ? ' %' : ' Вт'}
@@ -309,8 +317,13 @@ const ChartCanvas = memo(function ChartCanvas({
             contentStyle={{ borderRadius: 10, border: '1px solid rgba(13,40,24,0.1)' }}
             labelFormatter={(label, payload) => {
               const row = payload?.[0]?.payload as ChartRow | undefined;
-              const prefix = row?.__forecast ? 'Прогноз · ' : row?.__now ? 'Сейчас · ' : '';
-              return prefix + new Date(label).toLocaleString('ru-RU');
+              if (row?.__forecast && typeof row.__simDay === 'number') {
+                return `Прогноз · ${formatSimDayLabel(row.__simDay)}`;
+              }
+              if (row?.__now && typeof row.__simDay === 'number') {
+                return `Сейчас · ${formatSimDayLabel(row.__simDay)}`;
+              }
+              return new Date(label).toLocaleString('ru-RU');
             }}
             formatter={(value, name, item) => {
               if (typeof value !== 'number') return [String(value), name];
@@ -338,13 +351,18 @@ const ChartCanvas = memo(function ChartCanvas({
             />
           )}
 
-          {showForecast && forecastNowTime && forecastEndTime && (
+          {showForecast && forecastNowTime && forecastEndTime && forecastMeta && (
             <ReferenceArea
               x1={forecastNowTime}
               x2={forecastEndTime}
               fill="#722ed1"
-              fillOpacity={0.04}
-              label={{ value: 'Прогноз ML · 30 дн.', position: 'insideTopRight', fontSize: 10, fill: '#722ed1' }}
+              fillOpacity={0.06}
+              label={{
+                value: `→ Д${SIM_DAYS} (осталось ${forecastMeta.remainingSimDays.toFixed(0)} сут)`,
+                position: 'insideTopRight',
+                fontSize: 10,
+                fill: '#722ed1',
+              }}
             />
           )}
 
@@ -750,7 +768,7 @@ const ConsumptionChart = ({
         className="surface-card chart-card chart-card--stable"
         title={percentMode
           ? showForecast
-            ? 'Потребление — факт ← · → прогноз ML'
+            ? `3 мин = ${SIM_DAYS} дн. · факт ← · → прогноз`
             : 'Потребление — live (% от нормы)'
           : `Потребление — ${RANGE_LABELS[selectedRange] ?? selectedRange}`}
         extra={!isMobile ? rangeControl : undefined}
@@ -770,8 +788,8 @@ const ConsumptionChart = ({
                 ? ` · min ${stats.min.toFixed(0)}% / max ${stats.max.toFixed(0)}%`
                 : ` · min ${stats.min.toFixed(0)} / max ${stats.max.toFixed(0)} Вт`
             )}
-            {showForecast
-              ? ' · слева факт · справа прогноз 30 дн. (сжато)'
+            {showForecast && forecastBundle?.meta
+              ? ` · ${formatSimDayLabel(forecastBundle.meta.currentSimDay)}/${SIM_DAYS} · 3 мин = ${SIM_DAYS} сут`
               : ''}
             {plottedAnomalies.length > 0
               ? ` · ${plottedAnomalies.length} аномал. — клик по точке`
@@ -803,12 +821,12 @@ const ConsumptionChart = ({
                 key={ev.id}
                 className="chart-forecast-legend__item"
                 style={{ borderColor: ev.cycle?.fill ?? '#1677ff' }}
-                title={`${ev.label}: ${ev.magnitudePct}% · ${formatForecastDuration(ev.durationDays)}`}
+                title={eventDayRangeLabel(ev)}
               >
-                <strong>{ev.horizonDays}д</strong> {ev.label}
+                <strong>{eventDayRangeLabel(ev)}</strong>
+                {' '}{ev.label}
                 <Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>
                   {ev.pattern === 'oscillation' ? `±${ev.magnitudeSwing}%` : `${ev.magnitudePct}%`}
-                  {' · '}{formatForecastDuration(ev.durationDays)}
                 </Text>
               </span>
             ))}
@@ -832,6 +850,7 @@ const ConsumptionChart = ({
             forecastEndTime={forecastEndTime}
             forecastZones={forecastBundle?.zones}
             forecastMarkers={forecastBundle?.markers}
+            forecastMeta={forecastBundle?.meta}
             showForecast={showForecast}
             plottedAnomalies={plottedAnomalies}
             onAnomalyClick={handleAnomalyClick}

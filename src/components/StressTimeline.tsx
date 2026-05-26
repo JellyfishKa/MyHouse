@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Progress, Tag, Typography } from 'antd';
-import { STRESS_TICK_SEC, computeStressSignal } from '../constants/stressSteps';
+import { STRESS_TICK_SEC, computeStressSignal, stepToSimDay, SIM_DAYS } from '../constants/stressSteps';
 
 const { Text } = Typography;
 
@@ -33,7 +33,7 @@ interface StressTimelineProps {
 }
 
 export default function StressTimeline({ startedAt, endsAt, tick = 0 }: StressTimelineProps) {
-  const { elapsedSec, remainingSec, progress, startLabel, signal } = useMemo(() => {
+  const { elapsedSec, remainingSec, progress, startLabel, signal, simDay } = useMemo(() => {
     const elapsed = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
     const totalSec = startedAt && endsAt ? Math.floor((endsAt - startedAt) / 1000) : 180;
     const remaining = Math.max(0, totalSec - elapsed);
@@ -47,8 +47,9 @@ export default function StressTimeline({ startedAt, endsAt, tick = 0 }: StressTi
       : '—';
     const step = computeStressStep(startedAt);
     const signal = computeStressSignal(step);
+    const simDay = stepToSimDay(step);
 
-    return { elapsedSec: elapsed, remainingSec: remaining, progress: pct, startLabel, signal };
+    return { elapsedSec: elapsed, remainingSec: remaining, progress: pct, startLabel, signal, simDay };
   }, [startedAt, endsAt, tick]);
 
   return (
@@ -62,8 +63,11 @@ export default function StressTimeline({ startedAt, endsAt, tick = 0 }: StressTi
             {signal.tag}
           </Tag>
         )}
+        <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>
+          День {simDay.toFixed(1)}/{SIM_DAYS}
+        </Tag>
         <Tag style={{ margin: 0, fontSize: 11, background: 'rgba(22,119,255,0.12)', border: '1px solid rgba(22,119,255,0.35)', color: '#1677ff' }}>
-          2 / 7 / 30 дн.
+          3 мин = {SIM_DAYS} сут
         </Tag>
       </div>
       <Progress percent={progress} size="small" showInfo={false} strokeColor="#faad14" />

@@ -119,11 +119,11 @@ def main():
         "--days",
         type=int,
         default=7,
-        help="Days of historical telemetry to generate (default: 7, use 3 for quick prod seed)",
+        help="Days of historical telemetry to generate (default: 7, max: 45 for ML baseline)",
     )
     args = parser.parse_args()
     api = args.api.rstrip("/")
-    days = max(1, min(args.days, 30))
+    days = max(1, min(args.days, 45))
 
     print(f"API: {api}")
     print(f"Загрузка {days} дней данных (~{days * 1440 * 4} точек) — может занять несколько минут…")
