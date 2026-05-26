@@ -36,6 +36,7 @@ export interface StressTestContextValue {
   endsAt?: number;
   objectId?: string;
   stressPhase?: StressPhaseInfo;
+  stressStep?: number;
   tick: number;
   startStressTest: (params: {
     equipmentId: string;
@@ -95,6 +96,11 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   const stressPhase = useMemo(() => {
     if (!active || !startedAt) return undefined;
     return computeStressPhase(computeStressStep(startedAt));
+  }, [active, startedAt, tick]);
+
+  const stressStep = useMemo(() => {
+    if (!active || !startedAt) return undefined;
+    return computeStressStep(startedAt);
   }, [active, startedAt, tick]);
 
   useEffect(() => {
@@ -261,11 +267,12 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
       endsAt,
       objectId: stressObjectId ?? objectId,
       stressPhase,
+      stressStep,
       tick,
       startStressTest,
       endStressTest,
     }),
-    [active, equipmentId, startedAt, endsAt, stressObjectId, objectId, stressPhase, tick, startStressTest, endStressTest],
+    [active, equipmentId, startedAt, endsAt, stressObjectId, objectId, stressPhase, stressStep, tick, startStressTest, endStressTest],
   );
 
   return (

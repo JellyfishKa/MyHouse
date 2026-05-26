@@ -15,6 +15,7 @@ from app.models.reading import (
     RulPrediction,
     SensorSummary,
 )
+from app.services.stress_state import build_stress_predictive_insights, get_stress_step
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
 
@@ -149,6 +150,11 @@ async def get_predictive_insights(
     db: AsyncSession = Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
+
+    stress_step = get_stress_step(object_id)
+    if stress_step is not None:
+        return build_stress_predictive_insights(object_id, stress_step, now)
+
     week_ago = now - timedelta(days=7)
     day_ago = now - timedelta(days=1)
 

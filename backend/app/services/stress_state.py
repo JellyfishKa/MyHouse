@@ -1,0 +1,235 @@
+"""Live stress-test step tracker and demo predictive overlays."""
+from __future__ import annotations
+
+from datetime import datetime
+from uuid import UUID
+
+from app.models.reading import PredictiveInsightItem, PredictiveInsights
+
+_stress_steps: dict[UUID, int] = {}
+
+
+def set_stress_step(object_id: UUID, step: int) -> None:
+    _stress_steps[object_id] = step
+
+
+def clear_stress(object_id: UUID) -> None:
+    _stress_steps.pop(object_id, None)
+
+
+def get_stress_step(object_id: UUID) -> int | None:
+    return _stress_steps.get(object_id)
+
+
+def _item(
+    kind: str,
+    title: str,
+    summary: str,
+    horizon_days: int,
+    confidence: str,
+    *,
+    risk_level: str | None = None,
+    impact_pct: float | None = None,
+    window_label: str | None = None,
+) -> PredictiveInsightItem:
+    return PredictiveInsightItem(
+        kind=kind,
+        title=title,
+        summary=summary,
+        horizon_days=horizon_days,
+        confidence=confidence,
+        risk_level=risk_level,
+        impact_pct=impact_pct,
+        window_label=window_label,
+    )
+
+
+def build_stress_predictive_insights(object_id: UUID, step: int, now: datetime) -> PredictiveInsights:
+    """Dynamic 2 / 7 / 30-day forecasts synced with live stress-test step."""
+    # Defaults before first predict tick
+    spike = _item(
+        "spike_risk",
+        "Риск резкого изменения",
+        "Профиль стабилен — ML мониторит σ по 7-дневной базе.",
+        7,
+        "high",
+        risk_level="low",
+    )
+    growth = _item(
+        "consumption_growth",
+        "Тренд потребления",
+        "Суточный профиль в пределах сезонной нормы.",
+        7,
+        "high",
+        impact_pct=0.0,
+    )
+    savings = _item(
+        "savings_window",
+        "Окно оптимизации",
+        "Исторически минимальная нагрузка 02:00–05:00 — окно для снижения подачи.",
+        30,
+        "medium",
+        window_label="02:00–05:00",
+        impact_pct=4.2,
+    )
+
+    if step >= 1:
+        spike = _item(
+            "spike_risk",
+            "Spike · серверы",
+            "ML: σ +22% к 7-дневной базе — повышенный риск кратковременного скачка.",
+            7,
+            "medium",
+            risk_level="medium",
+        )
+    if step >= 5:
+        spike = _item(
+            "spike_risk",
+            "Spike · серверы",
+            "Сигнал подтверждён: confidence 78% — ожидается отклонение в ближайшие 2 дня.",
+            2,
+            "high",
+            risk_level="high",
+        )
+    if step >= 9:
+        spike = _item(
+            "spike_risk",
+            "Spike · подтверждено",
+            "Аномалия зафиксирована на линии серверов — модель обновляет baseline.",
+            2,
+            "high",
+            risk_level="high",
+        )
+
+    if step >= 10:
+        growth = _item(
+            "consumption_growth",
+            "Drift · серверы",
+            "Восходящий тренд +0.8%/сут — прогноз роста на 7 дней.",
+            7,
+            "medium",
+            impact_pct=5.6,
+        )
+    if step >= 13:
+        growth = _item(
+            "consumption_growth",
+            "Plateau ↑ · охлаждение",
+            "Устойчивый перегруз контура охлаждения — риск +15% к недельной норме.",
+            7,
+            "medium",
+            impact_pct=15.0,
+            risk_level="medium",
+        )
+    if step >= 16:
+        growth = _item(
+            "consumption_growth",
+            "Plateau ↑ · охлаждение",
+            "Сигнал 2 дня: confidence 81% — plateau на линии охлаждения.",
+            2,
+            "high",
+            impact_pct=15.0,
+        )
+    if step >= 18:
+        growth = _item(
+            "consumption_growth",
+            "Plateau ↑ · подтверждено",
+            "Стабильно повышенная нагрузка охлаждения — тренд закреплён.",
+            7,
+            "high",
+            impact_pct=15.0,
+        )
+
+    if step >= 21:
+        savings = _item(
+            "savings_window",
+            "Underconsumption ↓ · освещение",
+            "Аномальное снижение −28% — проверить линию освещения (горизонт 30 дней).",
+            30,
+            "medium",
+            impact_pct=-28.0,
+        )
+    if step >= 26:
+        savings = _item(
+            "savings_window",
+            "Underconsumption ↓ · освещение",
+            "Сигнал 7 дней: устойчиво пониженное потребление освещения.",
+            7,
+            "high",
+            impact_pct=-28.0,
+        )
+    if step >= 29:
+        savings = _item(
+            "savings_window",
+            "Underconsumption ↓ · подтверждено",
+            "Девиация подтверждена — экономия не целевая, требуется диагностика.",
+            7,
+            "high",
+            impact_pct=-28.0,
+        )
+
+    if step >= 31:
+        spike = _item(
+            "spike_risk",
+            "Oscillation · ИБП",
+            "Нестабильность ±12% — риск колебаний на горизонте 7 дней.",
+            7,
+            "medium",
+            risk_level="medium",
+        )
+    if step >= 34:
+        spike = _item(
+            "spike_risk",
+            "Oscillation · ИБП",
+            "Сигнал 2 дня: confidence 85% — колебания нагрузки ИБП.",
+            2,
+            "high",
+            risk_level="high",
+        )
+    if step >= 36:
+        spike = _item(
+            "spike_risk",
+            "Oscillation · подтверждено",
+            "Колебания ИБП зафиксированы — мониторинг стабилизации.",
+            2,
+            "high",
+            risk_level="high",
+        )
+
+    if step >= 45:
+        growth = _item(
+            "consumption_growth",
+            "Critical plateau · серверы",
+            "Длительный перегруз +42% — критический тренд на 30 дней.",
+            30,
+            "medium",
+            impact_pct=42.0,
+            risk_level="high",
+        )
+    if step >= 49:
+        growth = _item(
+            "consumption_growth",
+            "Critical plateau · серверы",
+            "Сигнал 2 дня: confidence 92% — критический plateau серверов.",
+            2,
+            "high",
+            impact_pct=42.0,
+            risk_level="high",
+        )
+    if step >= 53:
+        growth = _item(
+            "consumption_growth",
+            "Critical plateau · подтверждено",
+            "Критическая девиация подтверждена — требуется вмешательство.",
+            2,
+            "high",
+            impact_pct=42.0,
+            risk_level="high",
+        )
+
+    return PredictiveInsights(
+        object_id=object_id,
+        generated_at=now,
+        spike_risk=spike,
+        consumption_growth=growth,
+        savings_window=savings,
+    )

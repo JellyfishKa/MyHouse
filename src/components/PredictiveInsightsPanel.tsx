@@ -20,21 +20,31 @@ const riskColor: Record<string, string> = {
   high: 'error',
 };
 
-function InsightCard({ item }: { item: PredictiveInsightItem }) {
+function InsightCard({ item, live }: { item: PredictiveInsightItem; live?: boolean }) {
   const meta = KIND_META[item.kind] ?? KIND_META.spike_risk;
   const Icon = meta.icon;
+  const hot = live && (item.risk_level === 'high' || item.risk_level === 'medium' || item.confidence === 'high');
 
   return (
-    <Card className="surface-card predict-card" style={{ height: '100%' }}>
+    <Card
+      className={`surface-card predict-card${hot ? ' predict-card--live' : ''}`}
+      style={{
+        height: '100%',
+        ...(hot ? { boxShadow: `0 0 0 2px ${meta.accent}44` } : {}),
+      }}
+    >
       <div className="predict-card__head">
         <div className="predict-card__icon" style={{ background: `${meta.accent}18`, color: meta.accent }}>
           <Icon />
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <Tag
+            color={item.horizon_days <= 2 ? 'blue' : item.horizon_days <= 7 ? 'geekblue' : 'purple'}
+            style={{ margin: 0, fontSize: 11, fontWeight: 600 }}
+          >
             {item.horizon_days} дн.
-          </Text>
-          <Title level={5} style={{ margin: '2px 0 0', fontSize: 15 }}>
+          </Tag>
+          <Title level={5} style={{ margin: '4px 0 0', fontSize: 15 }}>
             {item.title}
           </Title>
         </div>
@@ -67,9 +77,10 @@ function InsightCard({ item }: { item: PredictiveInsightItem }) {
 interface PredictiveInsightsPanelProps {
   objectId?: string;
   refetchInterval?: number | false;
+  stressActive?: boolean;
 }
 
-export default function PredictiveInsightsPanel({ objectId, refetchInterval }: PredictiveInsightsPanelProps) {
+export default function PredictiveInsightsPanel({ objectId, refetchInterval, stressActive }: PredictiveInsightsPanelProps) {
   const { data, isLoading, error } = usePredictiveInsights(objectId, refetchInterval);
 
   if (!objectId) return null;
@@ -79,11 +90,18 @@ export default function PredictiveInsightsPanel({ objectId, refetchInterval }: P
       <div className="predict-panel__header">
         <Text className="eyebrow">Предиктивная аналитика</Text>
         <Title level={3} style={{ margin: '4px 0 0' }}>
-          Прогноз на ближайшие дни
+          {stressActive ? 'Live-прогноз · 2 / 7 / 30 дней' : 'Прогноз на ближайшие дни'}
         </Title>
         <Paragraph type="secondary" style={{ margin: '4px 0 0', maxWidth: 720 }}>
-          ML-модель анализирует 7-дневный профиль нагрузки: риск скачков, тренд потребления и окно для снижения тока.
+          {stressActive
+            ? 'Карточки синхронизированы со стресс-тестом: сначала прогноз (7–30 дн.), затем сигнал (2–7 дн.), затем подтверждение на графике.'
+            : 'ML-модель анализирует 7-дневный профиль: риск скачков, тренд потребления и окно для снижения нагрузки.'}
         </Paragraph>
+        {stressActive && (
+          <Tag color="processing" style={{ marginTop: 8 }}>
+            Обновление каждые ~4 с
+          </Tag>
+        )}
       </div>
 
       {error ? (
@@ -101,13 +119,13 @@ export default function PredictiveInsightsPanel({ objectId, refetchInterval }: P
       ) : data ? (
         <Row gutter={[12, 12]}>
           <Col xs={24} md={8}>
-            <InsightCard item={data.spike_risk} />
+            <InsightCard item={data.spike_risk} live={stressActive} />
           </Col>
           <Col xs={24} md={8}>
-            <InsightCard item={data.consumption_growth} />
+            <InsightCard item={data.consumption_growth} live={stressActive} />
           </Col>
           <Col xs={24} md={8}>
-            <InsightCard item={data.savings_window} />
+            <InsightCard item={data.savings_window} live={stressActive} />
           </Col>
         </Row>
       ) : null}

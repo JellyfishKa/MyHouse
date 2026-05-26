@@ -62,6 +62,7 @@ const Dashboard = () => {
     startedAt: stressStartedAt,
     objectId: stressObjectId,
     stressPhase,
+    stressStep,
     startStressTest,
     endStressTest,
   } = useStressTestContext();
@@ -239,7 +240,8 @@ const Dashboard = () => {
         <>
           <PredictiveInsightsPanel
             objectId={metricsObjectId}
-            refetchInterval={stressActive ? POLL_MS * 5 : 120_000}
+            refetchInterval={stressActive ? POLL_MS * 2 : 120_000}
+            stressActive={stressActive}
           />
 
           <Row gutter={[10, 10]}>
@@ -297,6 +299,7 @@ const Dashboard = () => {
             liveWindowMinutes={30}
             stressPhase={stressActive ? stressPhase : undefined}
             stressStartedAt={stressActive ? stressStartedAt : undefined}
+            stressStep={stressActive ? stressStep : undefined}
           />
         </>
       )}

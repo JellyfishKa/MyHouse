@@ -17,15 +17,31 @@ const SEVERITY_COLOR: Record<string, string> = {
   critical: '#ff4d4f',
 };
 
-function isPrecursorAlert(alert: AlertRecord): boolean {
+type AlertKind = 'predict' | 'precursor' | 'info';
+
+function classifyAlert(alert: AlertRecord): AlertKind {
   const msg = alert.message.toLowerCase();
-  return msg.includes('предупреждение') || msg.includes('через ~');
+  if (msg.startsWith('прогноз ·')) return 'predict';
+  if (msg.startsWith('сигнал ·')) return 'precursor';
+  return 'info';
 }
 
-function isTrendAlert(alert: AlertRecord): boolean {
-  const msg = alert.message.toLowerCase();
-  return msg.includes('drift') || msg.includes('тренд') || msg.includes('plateau')
-    || msg.includes('oscillation') || msg.includes('underconsumption');
+function alertTitle(alert: AlertRecord, kind: AlertKind): string {
+  if (kind === 'predict') {
+    const m = alert.message.match(/прогноз · (\d+) дн\./i);
+    return m ? `Прогноз · ${m[1]} дн.` : 'Прогноз ML';
+  }
+  if (kind === 'precursor') {
+    const m = alert.message.match(/сигнал · (\d+) дн\./i);
+    return m ? `Сигнал · ${m[1]} дн.` : 'Сигнал ML';
+  }
+  return `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`;
+}
+
+function alertSoundKind(alert: AlertRecord, kind: AlertKind): AlertSoundKind {
+  if (kind === 'predict') return 'predict';
+  if (kind === 'precursor') return 'precursor';
+  return alert.severity as AlertSoundKind;
 }
 
 interface UseStressNotificationsOptions {
@@ -107,36 +123,31 @@ export function useStressNotifications({
       if (stressStartedAt && new Date(alert.triggered_at).getTime() < stressStartedAt - 5000) return;
       seenAlertIds.current.add(alert.id);
 
-      const precursor = isPrecursorAlert(alert);
-      const trendInfo = isTrendAlert(alert);
-      const kind: AlertSoundKind = precursor ? 'precursor' : alert.severity;
+      const kind = classifyAlert(alert);
+      playAlertSound(alertSoundKind(alert, kind));
 
-      playAlertSound(kind);
+      const title = alertTitle(alert, kind);
       if (document.visibilityState === 'hidden' && typeof Notification !== 'undefined') {
         if (Notification.permission === 'granted') {
-          new Notification(
-            precursor ? 'Возможная аномалия' : `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`,
-            { body: alert.message, silent: false },
-          );
+          new Notification(title, { body: alert.message, silent: false });
         } else if (Notification.permission === 'default') {
           void Notification.requestPermission();
         }
       }
+
       notification.open({
-        message: precursor
-          ? 'Возможная аномалия через ~6 с'
-          : trendInfo
-            ? `Тренд / паттерн · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`
-            : `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`,
-        description: alert.message,
+        message: title,
+        description: kind === 'info' ? alert.message : undefined,
         placement: 'bottomRight',
-        duration: precursor ? 5 : 6,
-        type: precursor ? 'info' : undefined,
+        duration: kind === 'predict' ? 4 : kind === 'precursor' ? 5 : 6,
+        type: kind === 'predict' ? 'info' : kind === 'precursor' ? 'warning' : undefined,
         style: {
-          width: 320,
-          borderLeft: precursor
+          width: 300,
+          borderLeft: kind === 'predict'
             ? '4px solid #1677ff'
-            : `4px solid ${SEVERITY_COLOR[alert.severity] ?? '#999'}`,
+            : kind === 'precursor'
+              ? '4px solid #722ed1'
+              : `4px solid ${SEVERITY_COLOR[alert.severity] ?? '#999'}`,
         },
       });
     });
@@ -161,23 +172,20 @@ export function useStressNotifications({
       playAlertSound(a.severity as AlertSoundKind);
       if (document.visibilityState === 'hidden' && typeof Notification !== 'undefined') {
         if (Notification.permission === 'granted') {
-          new Notification(
-            `Аномалия · ${SEVERITY_LABEL[a.severity] ?? a.severity}`,
-            {
-              body: `${a.sensor_label ?? a.category}: ${a.value.toFixed(1)} Вт`,
-              silent: false,
-            },
-          );
+          new Notification('Подтверждено', {
+            body: `${a.sensor_label ?? a.category}`,
+            silent: false,
+          });
         }
       }
       notification.open({
-        message: `Аномалия подтверждена · ${SEVERITY_LABEL[a.severity] ?? a.severity}`,
-        description: `${a.sensor_label ?? a.category}: ${a.value.toFixed(1)} Вт (ожид. ${a.expected?.toFixed(1) ?? '—'})`,
+        message: 'Подтверждено',
+        description: `${a.sensor_label ?? a.category}`,
         placement: 'bottomRight',
-        duration: 7,
+        duration: 4,
         type: 'warning',
         style: {
-          width: 320,
+          width: 280,
           borderLeft: `4px solid ${SEVERITY_COLOR[a.severity] ?? '#999'}`,
         },
       });

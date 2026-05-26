@@ -22,25 +22,30 @@ from app.models.database.models import (
     SeverityLevel,
 )
 from app.models.reading import StressTestRequest, StressTestResponse
+from app.services.stress_state import clear_stress, set_stress_step
 
 router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
 
 STRESS_DEFAULT_DURATION_SEC = 180  # 3 minutes
 STRESS_TICK_SEC = 2
 
-# Step thresholds (1 step = STRESS_TICK_SEC seconds)
+# Step thresholds (1 step = 2 s). predict → precursor → anomaly (early warning for demo).
 S = {
-    "baseline_end": 9,
-    "spike_alert": 7,
+    "spike_predict": 1,
+    "spike_precursor": 5,
     "spike": 9,
-    "drift_alert": 13,
-    "cooling_alert": 16,
+    "drift_predict": 10,
+    "cooling_predict": 13,
+    "cooling_precursor": 16,
     "cooling_plateau": 18,
-    "lighting_alert": 27,
+    "lighting_predict": 21,
+    "lighting_precursor": 26,
     "lighting_low": 29,
-    "ups_alert": 34,
+    "ups_predict": 31,
+    "ups_precursor": 34,
     "ups_osc": 36,
-    "critical_alert": 51,
+    "critical_predict": 45,
+    "critical_precursor": 49,
     "critical_plateau": 53,
     "finale": 54,
     "servers_drift_end": 17,
@@ -49,15 +54,22 @@ S = {
     "ups_end": 51,
 }
 
-# (step, kind, category, severity, message, pattern)
-# pattern: spike | drift | plateau_high | plateau_low | oscillation | critical_plateau
+# kind: predict | precursor | anomaly | alert
 STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str, str]] = [
     (
-        S["spike_alert"],
-        "alert",
+        S["spike_predict"],
+        "predict",
         SensorCategory.SERVERS,
         SeverityLevel.LOW,
-        "Предупреждение: через ~6 с — скачок (spike) на линии серверов",
+        "Прогноз · 7 дн.: риск spike на серверах — тренд σ +22%",
+        "",
+    ),
+    (
+        S["spike_precursor"],
+        "precursor",
+        SensorCategory.SERVERS,
+        SeverityLevel.LOW,
+        "Сигнал · 2 дн.: spike на серверах — ML confidence 78%",
         "",
     ),
     (
@@ -65,23 +77,31 @@ STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str,
         "anomaly",
         SensorCategory.SERVERS,
         SeverityLevel.LOW,
-        "Spike: кратковременный скачок потребления серверов",
+        "Подтверждено: spike · серверы",
         "spike",
     ),
     (
-        S["drift_alert"],
-        "alert",
+        S["drift_predict"],
+        "predict",
         SensorCategory.SERVERS,
         SeverityLevel.LOW,
-        "Drift: восходящий тренд потребления серверов — постепенный рост нагрузки",
+        "Прогноз · 7 дн.: восходящий drift серверов — +0.8%/сут",
         "",
     ),
     (
-        S["cooling_alert"],
-        "alert",
+        S["cooling_predict"],
+        "predict",
         SensorCategory.COOLING,
         SeverityLevel.MEDIUM,
-        "Предупреждение: через ~6 с — устойчиво повышенное потребление охлаждения",
+        "Прогноз · 7 дн.: plateau ↑ охлаждение — устойчивый перегруз",
+        "",
+    ),
+    (
+        S["cooling_precursor"],
+        "precursor",
+        SensorCategory.COOLING,
+        SeverityLevel.MEDIUM,
+        "Сигнал · 2 дн.: рост нагрузки охлаждения — confidence 81%",
         "",
     ),
     (
@@ -89,15 +109,23 @@ STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str,
         "anomaly",
         SensorCategory.COOLING,
         SeverityLevel.MEDIUM,
-        "Plateau ↑: стабильно повышенная нагрузка охлаждения (+15%)",
+        "Подтверждено: plateau ↑ · охлаждение",
         "plateau_high",
     ),
     (
-        S["lighting_alert"],
-        "alert",
+        S["lighting_predict"],
+        "predict",
         SensorCategory.LIGHTING,
         SeverityLevel.MEDIUM,
-        "Предупреждение: через ~6 с — аномально низкое потребление освещения",
+        "Прогноз · 30 дн.: underconsumption ↓ освещение — аномальное снижение",
+        "",
+    ),
+    (
+        S["lighting_precursor"],
+        "precursor",
+        SensorCategory.LIGHTING,
+        SeverityLevel.MEDIUM,
+        "Сигнал · 7 дн.: пониженное потребление освещения",
         "",
     ),
     (
@@ -105,15 +133,23 @@ STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str,
         "anomaly",
         SensorCategory.LIGHTING,
         SeverityLevel.MEDIUM,
-        "Underconsumption ↓: устойчиво пониженное потребление (-28%)",
+        "Подтверждено: underconsumption ↓ · освещение",
         "plateau_low",
     ),
     (
-        S["ups_alert"],
-        "alert",
+        S["ups_predict"],
+        "predict",
         SensorCategory.UPS,
         SeverityLevel.HIGH,
-        "Предупреждение: через ~6 с — колебания нагрузки ИБП (oscillation)",
+        "Прогноз · 7 дн.: oscillation ИБП — нестабильность ±12%",
+        "",
+    ),
+    (
+        S["ups_precursor"],
+        "precursor",
+        SensorCategory.UPS,
+        SeverityLevel.HIGH,
+        "Сигнал · 2 дн.: колебания нагрузки ИБП — confidence 85%",
         "",
     ),
     (
@@ -121,15 +157,23 @@ STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str,
         "anomaly",
         SensorCategory.UPS,
         SeverityLevel.HIGH,
-        "Oscillation: нестабильное потребление ИБП (±12%)",
+        "Подтверждено: oscillation · ИБП",
         "oscillation",
     ),
     (
-        S["critical_alert"],
-        "alert",
+        S["critical_predict"],
+        "predict",
         SensorCategory.SERVERS,
         SeverityLevel.CRITICAL,
-        "Предупреждение: через ~6 с — критический plateau на серверах",
+        "Прогноз · 30 дн.: critical plateau серверов — риск +42%",
+        "",
+    ),
+    (
+        S["critical_precursor"],
+        "precursor",
+        SensorCategory.SERVERS,
+        SeverityLevel.CRITICAL,
+        "Сигнал · 2 дн.: критический plateau серверов — confidence 92%",
         "",
     ),
     (
@@ -137,7 +181,7 @@ STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str,
         "anomaly",
         SensorCategory.SERVERS,
         SeverityLevel.CRITICAL,
-        "Critical plateau: длительное повышенное потребление серверов (+42%)",
+        "Подтверждено: critical plateau · серверы",
         "critical_plateau",
     ),
     (
@@ -145,7 +189,7 @@ STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str,
         "alert",
         None,
         SeverityLevel.CRITICAL,
-        "Стресс-тест: все типы девиаций продемонстрированы — spike, drift, plateau, underconsumption, oscillation",
+        "Демо завершено: spike → drift → plateau → underconsumption → oscillation",
         "",
     ),
 ]
@@ -241,6 +285,7 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
 
     _active_stress_workers.add(equipment_id)
     step = 0
+    object_id: uuid.UUID | None = None
     deadline = datetime.now(timezone.utc) + timedelta(seconds=duration_sec)
     fired: set[tuple[int, str, str, str, str]] = set()
     rng = random.Random(42)
@@ -298,7 +343,7 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                     key = (sched_step, kind, cat_key, severity.value, pattern)
                     if step >= sched_step and key not in fired:
                         fired.add(key)
-                        if kind == "alert":
+                        if kind in ("predict", "precursor", "alert"):
                             db.add(
                                 Alert(
                                     equipment_id=equipment_id,
@@ -318,11 +363,16 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                                 )
                             )
 
+                if object_id:
+                    set_stress_step(object_id, step)
+
                 await db.commit()
                 step += 1
                 await asyncio.sleep(STRESS_TICK_SEC)
     finally:
         _active_stress_workers.discard(equipment_id)
+        if object_id:
+            clear_stress(object_id)
 
 
 @router.post("/stress-test", response_model=StressTestResponse)

@@ -22,6 +22,7 @@ import {
   type ObjectSensor,
 } from '../api/hooks';
 import AnomalyDetailModal from './AnomalyDetailModal';
+import { computeStressBands, type StressBand } from '../constants/stressSteps';
 
 const CHART_HEIGHT = 380;
 const CHART_HEIGHT_MOBILE = 260;
@@ -45,6 +46,7 @@ interface ConsumptionChartProps {
   liveWindowMinutes?: number;
   stressPhase?: StressPhaseInfo;
   stressStartedAt?: number;
+  stressStep?: number;
 }
 
 type ChartRow = Record<string, number | string | null>;
@@ -243,6 +245,7 @@ interface ChartCanvasProps {
   stressStartX?: string;
   stressStartedAt?: number;
   stressPhase?: StressPhaseInfo;
+  stressBands?: StressBand[];
   plottedAnomalies: PlottedAnomaly[];
   onAnomalyClick: (anomaly: AnomalyMarker) => void;
 }
@@ -258,6 +261,7 @@ const ChartCanvas = memo(function ChartCanvas({
   stressStartX,
   stressStartedAt,
   stressPhase,
+  stressBands,
   plottedAnomalies,
   onAnomalyClick,
 }: ChartCanvasProps) {
@@ -319,7 +323,18 @@ const ChartCanvas = memo(function ChartCanvas({
             />
           )}
 
-          {stressStartedAt && isLive && stressPhase && (
+          {stressBands?.map((band, i) => (
+            <ReferenceArea
+              key={`${band.x1}-${band.label}-${i}`}
+              x1={band.x1}
+              x2={band.x2}
+              fill={band.fill}
+              fillOpacity={band.fillOpacity}
+              label={{ value: band.label, position: 'insideTop', fontSize: 9, fill: band.fill }}
+            />
+          ))}
+
+          {stressStartedAt && isLive && stressPhase && !stressBands?.length && (
             <ReferenceArea
               x1={stressStartX}
               x2={chartData.length ? String(chartData[chartData.length - 1].time) : stressStartX}
@@ -375,6 +390,7 @@ const ConsumptionChart = ({
   liveWindowMinutes = 30,
   stressPhase,
   stressStartedAt,
+  stressStep,
 }: ConsumptionChartProps) => {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -543,6 +559,11 @@ const ConsumptionChart = ({
     return best;
   }, [stressStartedAt, chartData]);
 
+  const stressBands = useMemo(() => {
+    if (!stressStartedAt || stressStep == null || !isLive) return undefined;
+    return computeStressBands(stressStartedAt, stressStep);
+  }, [stressStartedAt, stressStep, isLive]);
+
   const yDomain: [number, number] | [string, string] = useMemo(() => {
     if (!percentMode || !stats) return ['dataMin - 5', 'dataMax + 5'];
     const nextLo = Math.max(0, Math.floor(stats.min / 5) * 5 - 5);
@@ -638,7 +659,7 @@ const ConsumptionChart = ({
             {plottedAnomalies.length > 0
               ? ` · ${plottedAnomalies.length} аномал. — клик по точке`
               : stressStartedAt && isLive
-                ? ' · паттерны на шагах 9–53 с (~3 мин)'
+                ? ' · зоны: 7д прогноз → 2д сигнал → ✓'
                 : '\u00A0'}
           </Text>
         </div>
@@ -670,6 +691,7 @@ const ConsumptionChart = ({
             stressStartX={stressStartX}
             stressStartedAt={stressStartedAt}
             stressPhase={stressPhase}
+            stressBands={stressBands}
             plottedAnomalies={plottedAnomalies}
             onAnomalyClick={handleAnomalyClick}
           />

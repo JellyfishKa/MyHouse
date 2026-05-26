@@ -1,4 +1,4 @@
-export type AlertSoundKind = 'precursor' | 'low' | 'medium' | 'high' | 'critical';
+export type AlertSoundKind = 'predict' | 'precursor' | 'low' | 'medium' | 'high' | 'critical';
 
 let audioCtx: AudioContext | null = null;
 
@@ -33,6 +33,11 @@ function tone(ctx: AudioContext, freq: number, start: number, duration: number, 
 function playTones(ctx: AudioContext, kind: AlertSoundKind) {
   const t = ctx.currentTime;
   const map: Record<AlertSoundKind, () => void> = {
+    predict: () => {
+      tone(ctx, 620, t, 0.07, 0.06);
+      tone(ctx, 740, t + 0.12, 0.07, 0.06);
+      tone(ctx, 880, t + 0.24, 0.09, 0.07);
+    },
     precursor: () => {
       tone(ctx, 880, t, 0.08);
       tone(ctx, 880, t + 0.15, 0.08);
