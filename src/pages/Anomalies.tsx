@@ -3,7 +3,10 @@ import { Alert, Card, Empty, Select, Space, Statistic, Table, Tag, Typography } 
 import type { ColumnsType } from 'antd/es/table';
 import { useOutletContext } from 'react-router-dom';
 import type { AppLayoutContextValue } from '../components/MainLayout';
+import { useStressTestContextOptional } from '../context/StressTestContext';
 import { useAnomalies, type AnomalyRecord } from '../api/hooks';
+
+const POLL_MS = 2000;
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -16,8 +19,15 @@ const severityConfig: Record<string, { color: string; label: string }> = {
 
 const Anomalies = () => {
   const { selectedObject, selectedObjectId } = useOutletContext<AppLayoutContextValue>();
+  const stress = useStressTestContextOptional();
+  const stressActive = !!stress?.active;
+  const metricsObjectId = stressActive && stress?.objectId ? stress.objectId : selectedObjectId;
   const [severity, setSeverity] = useState<string>();
-  const { data = [], isLoading, error } = useAnomalies(selectedObjectId, severity);
+  const { data = [], isLoading, error } = useAnomalies(
+    metricsObjectId,
+    severity,
+    stressActive ? POLL_MS : false,
+  );
 
   const columns = useMemo<ColumnsType<AnomalyRecord>>(
     () => [

@@ -9,6 +9,7 @@ import {
   ToolOutlined,
 } from '@ant-design/icons';
 import { useMlHealth, useObjects, type MlHealth, type MonitoringObject } from '../api/hooks';
+import { StressTestProvider, useStressTestContextOptional } from '../context/StressTestContext';
 
 const { Header, Content, Sider } = Layout;
 const { Text, Title } = Typography;
@@ -110,6 +111,7 @@ const MobileLayout = ({
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const stress = useStressTestContextOptional();
   const mlStatus = formatMlStatus(context.mlHealth);
   const title = pageTitle[location.pathname] ?? 'ПУЛЬСТОК';
   const currentNav = navLinks.find((n) => n.key === location.pathname);
@@ -167,6 +169,7 @@ const MobileLayout = ({
             loading={context.objectsLoading}
             value={context.selectedObjectId}
             onChange={context.setSelectedObjectId}
+            disabled={stress?.active}
             options={context.objects.map((o) => ({ label: o.name, value: o.id }))}
             notFoundContent={context.objectsLoading ? <Spin size="small" /> : 'Нет данных'}
             className="mobile-object-select"
@@ -190,6 +193,7 @@ const DesktopLayout = ({
 }) => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const stress = useStressTestContextOptional();
   const mlStatus = formatMlStatus(context.mlHealth);
   const title = pageTitle[location.pathname] ?? 'ПУЛЬСТОК';
 
@@ -243,6 +247,7 @@ const DesktopLayout = ({
               loading={context.objectsLoading}
               value={context.selectedObjectId}
               onChange={context.setSelectedObjectId}
+              disabled={stress?.active}
               options={context.objects.map((o) => ({ label: o.name, value: o.id }))}
               notFoundContent={context.objectsLoading ? <Spin size="small" /> : 'Объекты не найдены'}
               style={{ minWidth: 220 }}
@@ -284,10 +289,12 @@ const MainLayout = () => {
 
   return (
     <ConfigProvider theme={antdTheme}>
-      {isMobile
-        ? <MobileLayout context={layoutContext}>{outlet}</MobileLayout>
-        : <DesktopLayout context={layoutContext}>{outlet}</DesktopLayout>
-      }
+      <StressTestProvider objectId={selectedObject?.id}>
+        {isMobile
+          ? <MobileLayout context={layoutContext}>{outlet}</MobileLayout>
+          : <DesktopLayout context={layoutContext}>{outlet}</DesktopLayout>
+        }
+      </StressTestProvider>
     </ConfigProvider>
   );
 };

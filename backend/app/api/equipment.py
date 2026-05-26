@@ -120,12 +120,14 @@ async def ingest_readings(
 async def get_alerts(
     equipment_id: UUID,
     acknowledged: bool | None = None,
+    limit: int = 100,
     db: AsyncSession = Depends(get_db),
 ):
     stmt = (
         select(Alert)
         .where(Alert.equipment_id == equipment_id)
         .order_by(Alert.triggered_at.desc())
+        .limit(limit)
     )
     if acknowledged is not None:
         stmt = stmt.where(Alert.acknowledged == acknowledged)

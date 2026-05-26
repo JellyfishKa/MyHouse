@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone  # noqa: F401 (timezone used 
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, join, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,16 +70,19 @@ async def get_object_summary(
 @router.get("/health/{object_id}", response_model=HealthScore)
 async def get_object_health(
     object_id: UUID,
+    since: datetime | None = Query(None, description="Only count anomalies detected after this time (ISO 8601)"),
     db: AsyncSession = Depends(get_db),
 ):
-    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    cutoff = since if since is not None else datetime.now(timezone.utc) - timedelta(days=7)
+    if cutoff.tzinfo is None:
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
 
     query = (
         select(Anomaly.severity, func.count().label("cnt"))
         .join(Sensor, Sensor.id == Anomaly.sensor_id)
         .where(
             Sensor.object_id == object_id,
-            Anomaly.detected_at >= seven_days_ago,
+            Anomaly.detected_at >= cutoff,
         )
         .group_by(Anomaly.severity)
     )

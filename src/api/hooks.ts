@@ -196,11 +196,12 @@ export function useMlHealth() {
   });
 }
 
-export function useHealthScore(objectId?: string, refetchInterval?: number | false) {
+export function useHealthScore(objectId?: string, refetchInterval?: number | false, since?: string) {
   return useQuery<HealthScore>({
-    queryKey: ['health-score', objectId],
+    queryKey: ['health-score', objectId, since],
     queryFn: async () => {
-      const { data } = await api.get(`/analytics/health/${objectId!}`);
+      const params = since ? { since } : undefined;
+      const { data } = await api.get(`/analytics/health/${objectId!}`, { params });
       return data;
     },
     enabled: !!objectId,
