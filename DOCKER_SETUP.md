@@ -1,5 +1,8 @@
 # MyHouse Backend - Полная настройка Docker
 
+> **Примечание:** часть этого документа устарела (описывает Express/Redis). Актуальный стек — FastAPI + TimescaleDB + ML.  
+> Production на VDS: [docs/DEPLOY_FIRSTVDS.md](docs/DEPLOY_FIRSTVDS.md). Облако: [docs/DEPLOY_RAILWAY_VERCEL.md](docs/DEPLOY_RAILWAY_VERCEL.md).
+
 Этот документ описывает полную инструкцию по запуску проекта с использованием Docker Compose для локальной разработки, тестирования и production deployment.
 
 ## Структура проекта

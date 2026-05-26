@@ -1,0 +1,50 @@
+# Production overrides for FirstVDS / single-server deploy.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    ports: !reset []
+
+  backend:
+    volumes: !reset []
+    ports: !reset []
+    environment:
+      NODE_ENV: production
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://${DOMAIN}}
+
+  ml:
+    volumes: !reset
+      - ml_data:/data/ml_results
+    ports: !reset []
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: myhouse-caddy
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    networks:
+      - myhouse-network
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

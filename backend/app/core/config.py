@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = 8000
     ELECTRICITY_TARIFF: float = 7.0
     ML_SERVICE_URL: str = "http://ml:8002"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://frontend:80"
 
     @property
     def DATABASE_URL(self) -> str:

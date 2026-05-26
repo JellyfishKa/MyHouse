@@ -9,16 +9,13 @@ from app.api.demo import router as demo_router
 from app.api.equipment import router as equipment_router
 from app.api.ml import router as ml_router
 from app.api.objects import router as objects_router
+from app.core.config import settings
 
 app = FastAPI(title="IoT Monitoring Service")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://frontend:80",
-    ],
+    allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

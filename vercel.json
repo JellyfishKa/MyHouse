@@ -1,0 +1,19 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://REPLACE-WITH-RAILWAY-BACKEND.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://REPLACE-WITH-RAILWAY-BACKEND.up.railway.app/health"
+    },
+    {
+      "source": "/docs",
+      "destination": "https://REPLACE-WITH-RAILWAY-BACKEND.up.railway.app/docs"
+    }
+  ]
+}

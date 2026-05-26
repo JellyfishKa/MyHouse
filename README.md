@@ -3,7 +3,17 @@
 Система мониторинга энергопотребления с применением NILM.
 Проект факультета математики и ИТ МГУ им. Н.П. Огарева для Акселератора «ОгарёвPRO».
 
-**Стек:** React + TypeScript + Vite, FastAPI, Node.js/Express, PostgreSQL + TimescaleDB, Redis, Docker.
+**Стек:** React + TypeScript + Vite, FastAPI, PostgreSQL + TimescaleDB, ML (sklearn), Docker.
+
+---
+
+## Деплой
+
+| Сценарий | Документация |
+|----------|--------------|
+| VDS (FirstVDS + DuckDNS + Docker) | [docs/DEPLOY_FIRSTVDS.md](docs/DEPLOY_FIRSTVDS.md) |
+| Облако (Railway + Vercel) | [docs/DEPLOY_RAILWAY_VERCEL.md](docs/DEPLOY_RAILWAY_VERCEL.md) |
+| Локальная разработка | [DOCKER_SETUP.md](DOCKER_SETUP.md) |
 
 ---
 
@@ -16,19 +26,20 @@
 
 ---
 
-## Быстрый старт
+## Быстрый старт (локально)
 
 ```bash
 git clone https://github.com/JellyfishKa/MyHouse.git
 cd MyHouse
 cp .env.example .env
-docker-compose up -d
+docker compose up -d --build
 ```
 
 Заполнить БД тестовыми данными (объект + 4 сенсора):
 
 ```bash
 python infra/seed.py
+python scripts/seed_demo.py
 ```
 
 ---
@@ -37,17 +48,20 @@ python infra/seed.py
 
 | Сервис | URL / Порт | Описание |
 |--------|-----------|----------|
-| Express API + Swagger | http://localhost:8000/docs | Node.js REST API |
-| FastAPI + Swagger | http://localhost:8001/docs | Python REST API (телеметрия) |
-| PostgreSQL + TimescaleDB | localhost:5432 | База данных |
-| Redis | localhost:6379 | Кеш |
+| Frontend (Docker) | http://localhost:3000 | React SPA + nginx proxy |
+| FastAPI + Swagger | http://localhost:3000/docs | REST API (через nginx) |
+| PostgreSQL + TimescaleDB | localhost:5432 | База данных (только internal в prod) |
+| ML service | localhost:8002 | Аномалии и RUL (internal в prod) |
 
 Проверка работоспособности:
 
 ```bash
-curl http://localhost:8000/health
-curl http://localhost:8001/api/v1/healthcheck
+curl http://localhost:3000/health
+curl http://localhost:3000/api/v1/healthcheck
+curl http://localhost:3000/api/v1/ml/health
 ```
+
+Production на VDS: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` — см. [DEPLOY_FIRSTVDS.md](docs/DEPLOY_FIRSTVDS.md).
 
 ---
 
@@ -79,15 +93,17 @@ python ml/load_csv.py \
 
 | Переменная | Дефолт | Описание |
 |------------|--------|----------|
-| `DB_URL` | `postgresql://postgres:postgres@postgres:5432/myhouse` | Connection string |
-| `REDIS_URL` | `redis://:redis@redis:6379` | Redis connection string |
+| `DOMAIN` | — | Поддомен DuckDNS (production) |
 | `DB_USER` | `postgres` | Пользователь БД |
 | `DB_PASSWORD` | `postgres` | Пароль БД |
 | `DB_NAME` | `myhouse` | Имя базы данных |
 | `DB_PORT` | `5432` | Порт PostgreSQL |
-| `REDIS_PASSWORD` | `redis` | Пароль Redis |
-| `BACKEND_PORT` | `8000` | Порт Express |
-| `NODE_ENV` | `development` | Окружение |
+| `BACKEND_PORT` | `8000` | Порт FastAPI (dev) |
+| `ML_SERVICE_URL` | `http://ml:8002` | URL ML-сервиса |
+| `CORS_ORIGINS` | localhost | Разрешённые origins для CORS |
+| `VITE_API_URL` | `/api/v1` в Docker prod | Base URL API для фронта |
+
+Полный список: [.env.example](.env.example).
 
 ---
 
@@ -95,22 +111,25 @@ python ml/load_csv.py \
 
 ```bash
 # Логи всех сервисов
-docker-compose logs -f
+docker compose logs -f
 
-# Логи конкретного сервиса
-docker-compose logs -f backend
+# Логи backend
+docker compose logs -f backend
 
 # Подключение к БД
-docker-compose exec postgres psql -U postgres -d myhouse
+docker compose exec postgres psql -U postgres -d myhouse
 
-# Подключение к Redis
-docker-compose exec redis redis-cli -a redis
+# Seed через API (production)
+./scripts/seed_production.sh https://pulsetok.duckdns.org
 
 # Пересборка backend
-docker-compose up -d --build backend
+docker compose up -d --build backend
+
+# Production stack (VDS)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 # Остановить всё
-docker-compose down
+docker compose down
 ```
 
 ---
@@ -124,7 +143,9 @@ docker-compose down
 
 ## Документация
 
-- [DOCKER_SETUP.md](DOCKER_SETUP.md) — Полная инструкция по Docker
+- [docs/DEPLOY_FIRSTVDS.md](docs/DEPLOY_FIRSTVDS.md) — Деплой на VDS (Docker + DuckDNS)
+- [docs/DEPLOY_RAILWAY_VERCEL.md](docs/DEPLOY_RAILWAY_VERCEL.md) — Деплой в облако (Railway + Vercel)
+- [DOCKER_SETUP.md](DOCKER_SETUP.md) — Локальный Docker (legacy, частично устарел)
 - [LICENSE](LICENSE) — ISC лицензия
 ## Применение методов NILM для анализа потоков напряжения и выявления неполадок оборудования
 Традиционные методы диагностики требуют установки датчиков на каждый агрегат. NILM позволяет анализировать состояние оборудования, используя только данные с главного электросчетчика (основного ввода), что снижает затраты на аппаратное обеспечение и упрощает внедрение систем предиктивной аналитики.
