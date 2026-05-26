@@ -22,6 +22,8 @@ import StressTimeline, {
   type StressPhaseInfo,
 } from '../components/StressTimeline';
 import { useStressNotifications } from '../hooks/useStressNotifications';
+import { useNotificationLog } from '../context/NotificationLogContext';
+import NotificationLogPanel from '../components/NotificationLogPanel';
 
 const POLL_MS = 2000;
 const STRESS_END_GRACE_MS = 5_000;
@@ -65,6 +67,7 @@ interface StressTestProviderProps {
 
 export function StressTestProvider({ objectId, children }: StressTestProviderProps) {
   const queryClient = useQueryClient();
+  const { clearLog, entries } = useNotificationLog();
   const detectMutation = useTriggerDetection();
   const retrainMutation = useRetrainMl();
   const endTimerRef = useRef<number | undefined>(undefined);
@@ -208,6 +211,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
       retrainDoneRef.current.clear();
       retrainChainRef.current = Promise.resolve();
       startedAtRef.current = now;
+      clearLog();
       setEquipmentId(eqId);
       setStressObjectId(objId);
       setStartedAt(now);
@@ -219,7 +223,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
         message.info('Стресс-тест завершён');
       }, end - now + STRESS_END_GRACE_MS);
     },
-    [endStressTest],
+    [endStressTest, clearLog],
   );
 
   useEffect(() => () => {
@@ -278,6 +282,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   return (
     <StressTestContext.Provider value={value}>
       {children}
+      <NotificationLogPanel visible={active || entries.length > 0} />
       {active && (
         <StressTimeline startedAt={startedAt} endsAt={endsAt} tick={tick} />
       )}

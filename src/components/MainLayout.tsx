@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { useMlHealth, useObjects, type MlHealth, type MonitoringObject } from '../api/hooks';
 import { StressTestProvider, useStressTestContextOptional } from '../context/StressTestContext';
+import { NotificationLogProvider } from '../context/NotificationLogContext';
 
 const { Header, Content, Sider } = Layout;
 const { Text, Title } = Typography;
@@ -289,12 +290,14 @@ const MainLayout = () => {
 
   return (
     <ConfigProvider theme={antdTheme}>
-      <StressTestProvider objectId={selectedObject?.id}>
-        {isMobile
-          ? <MobileLayout context={layoutContext}>{outlet}</MobileLayout>
-          : <DesktopLayout context={layoutContext}>{outlet}</DesktopLayout>
-        }
-      </StressTestProvider>
+      <NotificationLogProvider>
+        <StressTestProvider objectId={selectedObject?.id}>
+          {isMobile
+            ? <MobileLayout context={layoutContext}>{outlet}</MobileLayout>
+            : <DesktopLayout context={layoutContext}>{outlet}</DesktopLayout>
+          }
+        </StressTestProvider>
+      </NotificationLogProvider>
     </ConfigProvider>
   );
 };

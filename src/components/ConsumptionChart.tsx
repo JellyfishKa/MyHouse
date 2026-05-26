@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react';
 import { Alert, Card, Checkbox, Empty, Grid, Select, Segmented, Spin, Typography } from 'antd';
 import { useQueries, keepPreviousData } from '@tanstack/react-query';
 import {
@@ -23,6 +23,13 @@ import {
 } from '../api/hooks';
 import AnomalyDetailModal from './AnomalyDetailModal';
 import { computeStressBands, type StressBand } from '../constants/stressSteps';
+import {
+  buildForecastExtension,
+  mergeActualAndForecast,
+  formatForecastDuration,
+  type ForecastMarker,
+  type ForecastZone,
+} from '../utils/forecastChartUtils';
 
 const CHART_HEIGHT = 380;
 const CHART_HEIGHT_MOBILE = 260;
@@ -49,7 +56,7 @@ interface ConsumptionChartProps {
   stressStep?: number;
 }
 
-type ChartRow = Record<string, number | string | null>;
+type ChartRow = Record<string, number | string | boolean | null>;
 
 interface PlottedAnomaly {
   anomaly: AnomalyMarker;
@@ -246,6 +253,11 @@ interface ChartCanvasProps {
   stressStartedAt?: number;
   stressPhase?: StressPhaseInfo;
   stressBands?: StressBand[];
+  forecastNowTime?: string;
+  forecastEndTime?: string;
+  forecastZones?: ForecastZone[];
+  forecastMarkers?: ForecastMarker[];
+  showForecast?: boolean;
   plottedAnomalies: PlottedAnomaly[];
   onAnomalyClick: (anomaly: AnomalyMarker) => void;
 }
@@ -262,6 +274,11 @@ const ChartCanvas = memo(function ChartCanvas({
   stressStartedAt,
   stressPhase,
   stressBands,
+  forecastNowTime,
+  forecastEndTime,
+  forecastZones,
+  forecastMarkers,
+  showForecast,
   plottedAnomalies,
   onAnomalyClick,
 }: ChartCanvasProps) {
@@ -290,16 +307,23 @@ const ChartCanvas = memo(function ChartCanvas({
           />
           <Tooltip
             contentStyle={{ borderRadius: 10, border: '1px solid rgba(13,40,24,0.1)' }}
-            labelFormatter={(label) => new Date(label).toLocaleString('ru-RU')}
+            labelFormatter={(label, payload) => {
+              const row = payload?.[0]?.payload as ChartRow | undefined;
+              const prefix = row?.__forecast ? 'Прогноз · ' : row?.__now ? 'Сейчас · ' : '';
+              return prefix + new Date(label).toLocaleString('ru-RU');
+            }}
             formatter={(value, name, item) => {
               if (typeof value !== 'number') return [String(value), name];
               const payload = item?.payload as ChartRow | undefined;
-              const wKey = `__w_${String(name)}`;
+              const isFc = String(name).endsWith(' (прогноз)');
+              const baseName = isFc ? String(name).replace(' (прогноз)', '') : String(name);
+              const wKey = `__w_${baseName}`;
               const w = payload?.[wKey];
               if (percentMode && typeof w === 'number') {
-                return [`${value.toFixed(1)}% (${w.toFixed(0)} Вт)`, name];
+                return [`${value.toFixed(1)}% (${w.toFixed(0)} Вт)`, isFc ? `${baseName} (прогноз)` : baseName];
               }
-              return [`${value.toFixed(1)}${percentMode ? '%' : ' Вт'}`, name];
+              const suffix = payload?.__forecast ? ' · прогноз' : '';
+              return [`${value.toFixed(1)}${percentMode ? '%' : ' Вт'}${suffix}`, name];
             }}
           />
           {!isMobile && !isLive && <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12 }} />}
@@ -314,7 +338,53 @@ const ChartCanvas = memo(function ChartCanvas({
             />
           )}
 
-          {stressStartX && isLive && (
+          {showForecast && forecastNowTime && forecastEndTime && (
+            <ReferenceArea
+              x1={forecastNowTime}
+              x2={forecastEndTime}
+              fill="#722ed1"
+              fillOpacity={0.04}
+              label={{ value: 'Прогноз ML · 30 дн.', position: 'insideTopRight', fontSize: 10, fill: '#722ed1' }}
+            />
+          )}
+
+          {showForecast && forecastNowTime && (
+            <ReferenceLine
+              x={forecastNowTime}
+              stroke="#141414"
+              strokeWidth={2}
+              strokeDasharray="4 2"
+              label={{ value: 'сейчас', position: 'insideTopLeft', fontSize: 11, fill: '#141414', fontWeight: 600 }}
+            />
+          )}
+
+          {showForecast && forecastZones?.map((zone, i) => (
+            <ReferenceArea
+              key={`fz-${zone.label}-${i}`}
+              x1={zone.x1}
+              x2={zone.x2}
+              y1={zone.yLow}
+              y2={zone.yHigh}
+              fill={zone.fill}
+              fillOpacity={zone.fillOpacity}
+              label={{ value: zone.label, position: 'insideTop', fontSize: 9, fill: zone.fill }}
+            />
+          ))}
+
+          {forecastMarkers?.map((m, i) => (
+            <ReferenceDot
+              key={`fm-${m.label}-${i}`}
+              x={m.time}
+              y={m.y}
+              r={7}
+              fill={m.fill}
+              fillOpacity={0.35}
+              stroke={m.fill}
+              strokeWidth={2}
+            />
+          ))}
+
+          {stressStartX && isLive && !showForecast && (
             <ReferenceLine
               x={stressStartX}
               stroke="#1677ff"
@@ -361,20 +431,39 @@ const ChartCanvas = memo(function ChartCanvas({
             if (hiddenSensors.has(sensor.id)) return null;
             const style = CHART_LINE_STYLES[index % CHART_LINE_STYLES.length];
             const hasSeries = chartData.some((row) => typeof row[sensor.label] === 'number');
-            if (!hasSeries) return null;
+            const hasFc = showForecast && chartData.some((row) => typeof row[`${sensor.label}__fc`] === 'number');
+            if (!hasSeries && !hasFc) return null;
             return (
-              <Line
-                key={sensor.id}
-                type="monotone"
-                dataKey={sensor.label}
-                stroke={style.stroke}
-                strokeWidth={style.strokeWidth}
-                strokeDasharray={style.strokeDasharray}
-                dot={false}
-                connectNulls
-                activeDot={{ r: 4 }}
-                isAnimationActive={false}
-              />
+              <Fragment key={sensor.id}>
+                {hasSeries && (
+                  <Line
+                    type="monotone"
+                    dataKey={sensor.label}
+                    stroke={style.stroke}
+                    strokeWidth={style.strokeWidth}
+                    strokeDasharray={style.strokeDasharray}
+                    dot={false}
+                    connectNulls={false}
+                    activeDot={{ r: 4 }}
+                    isAnimationActive={false}
+                  />
+                )}
+                {hasFc && (
+                  <Line
+                    type="monotone"
+                    dataKey={`${sensor.label}__fc`}
+                    name={`${sensor.label} (прогноз)`}
+                    stroke={style.stroke}
+                    strokeWidth={style.strokeWidth * 0.85}
+                    strokeDasharray="6 4"
+                    strokeOpacity={0.75}
+                    dot={false}
+                    connectNulls
+                    activeDot={{ r: 3 }}
+                    isAnimationActive={false}
+                  />
+                )}
+              </Fragment>
             );
           })}
         </ComposedChart>
@@ -517,39 +606,56 @@ const ConsumptionChart = ({
     });
   }, [rawChartData, sensors, percentMode, baselines]);
 
+  const showForecast = isLive && stressStartedAt != null && stressStep != null;
+
+  const forecastBundle = useMemo(() => {
+    if (!showForecast || stressStep == null) {
+      return null;
+    }
+    return buildForecastExtension(sensors, chartData, stressStep);
+  }, [showForecast, sensors, chartData, stressStep]);
+
+  const displayChartData = useMemo(() => {
+    if (!forecastBundle?.rows.length) return chartData;
+    return mergeActualAndForecast(chartData, forecastBundle.rows);
+  }, [chartData, forecastBundle]);
+
   const plottedAnomalies = useMemo((): PlottedAnomaly[] => {
     return anomalyMarkers.flatMap((anomaly) => {
       const sensorLabel = resolveSensorLabel(anomaly, sensors);
-      const snapped = snapAnomalyToChart(anomaly, sensorLabel, chartData, percentMode);
+      const snapped = snapAnomalyToChart(anomaly, sensorLabel, displayChartData, percentMode);
       if (!snapped) return [];
       return [{ anomaly, chartTime: snapped.chartTime, y: snapped.y }];
     });
-  }, [anomalyMarkers, sensors, chartData, percentMode]);
+  }, [anomalyMarkers, sensors, displayChartData, percentMode]);
 
   const stats = useMemo(() => {
     const values: number[] = [];
-    chartData.forEach((row) => {
+    displayChartData.forEach((row) => {
       visibleSensors.forEach((s) => {
         const v = row[s.label];
+        const fc = row[`${s.label}__fc`];
         if (typeof v === 'number') values.push(v);
+        if (typeof fc === 'number') values.push(fc);
       });
     });
     if (!values.length) return null;
     return {
       min: Math.min(...values),
       max: Math.max(...values),
-      count: chartData.length,
+      count: displayChartData.length,
     };
-  }, [chartData, visibleSensors]);
+  }, [displayChartData, visibleSensors]);
 
   const stressStartX = useMemo(() => {
-    if (!stressStartedAt || !chartData.length) return undefined;
+    if (!stressStartedAt || !displayChartData.length) return undefined;
     const key = bucketTimeKey(new Date(stressStartedAt).toISOString(), LIVE_BUCKET_MS);
-    const exact = chartData.find((r) => String(r.time) === key);
+    const exact = displayChartData.find((r) => String(r.time) === key);
     if (exact) return String(exact.time);
-    let best = String(chartData[0].time);
+    let best = String(displayChartData[0].time);
     let bestDiff = Infinity;
-    chartData.forEach((row) => {
+    displayChartData.forEach((row) => {
+      if (row.__forecast) return;
       const d = Math.abs(new Date(String(row.time)).getTime() - stressStartedAt);
       if (d < bestDiff) {
         bestDiff = d;
@@ -557,7 +663,7 @@ const ConsumptionChart = ({
       }
     });
     return best;
-  }, [stressStartedAt, chartData]);
+  }, [stressStartedAt, displayChartData]);
 
   const stressBands = useMemo(() => {
     if (!stressStartedAt || stressStep == null || !isLive) return undefined;
@@ -616,7 +722,11 @@ const ConsumptionChart = ({
     );
   }
 
-  const hasPlottableData = chartData.some((row) =>
+  const forecastEndTime = forecastBundle?.rows.length
+    ? String(forecastBundle.rows[forecastBundle.rows.length - 1].time)
+    : undefined;
+
+  const hasPlottableData = displayChartData.some((row) =>
     sensors.some((s) => typeof row[s.label] === 'number'),
   );
 
@@ -638,7 +748,11 @@ const ConsumptionChart = ({
     <>
       <Card
         className="surface-card chart-card chart-card--stable"
-        title={percentMode ? 'Потребление — live (% от нормы)' : `Потребление — ${RANGE_LABELS[selectedRange] ?? selectedRange}`}
+        title={percentMode
+          ? showForecast
+            ? 'Потребление — факт ← · → прогноз ML'
+            : 'Потребление — live (% от нормы)'
+          : `Потребление — ${RANGE_LABELS[selectedRange] ?? selectedRange}`}
         extra={!isMobile ? rangeControl : undefined}
       >
         {isMobile && (
@@ -656,9 +770,12 @@ const ConsumptionChart = ({
                 ? ` · min ${stats.min.toFixed(0)}% / max ${stats.max.toFixed(0)}%`
                 : ` · min ${stats.min.toFixed(0)} / max ${stats.max.toFixed(0)} Вт`
             )}
+            {showForecast
+              ? ' · слева факт · справа прогноз 30 дн. (сжато)'
+              : ''}
             {plottedAnomalies.length > 0
               ? ` · ${plottedAnomalies.length} аномал. — клик по точке`
-              : stressStartedAt && isLive
+              : stressStartedAt && isLive && !showForecast
                 ? ' · зоны: 7д прогноз → 2д сигнал → ✓'
                 : '\u00A0'}
           </Text>
@@ -679,9 +796,28 @@ const ConsumptionChart = ({
           </div>
         )}
 
+        {showForecast && forecastBundle?.upcoming.length ? (
+          <div className="chart-forecast-legend">
+            {forecastBundle.upcoming.map((ev) => (
+              <span
+                key={ev.id}
+                className="chart-forecast-legend__item"
+                style={{ borderColor: ev.cycle?.fill ?? '#1677ff' }}
+                title={`${ev.label}: ${ev.magnitudePct}% · ${formatForecastDuration(ev.durationDays)}`}
+              >
+                <strong>{ev.horizonDays}д</strong> {ev.label}
+                <Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>
+                  {ev.pattern === 'oscillation' ? `±${ev.magnitudeSwing}%` : `${ev.magnitudePct}%`}
+                  {' · '}{formatForecastDuration(ev.durationDays)}
+                </Text>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
         <div className="chart-shell" style={{ height: chartHeight }}>
           <ChartCanvas
-            chartData={chartData}
+            chartData={displayChartData}
             sensors={sensors}
             hiddenSensors={hiddenSensors}
             isMobile={isMobile}
@@ -691,7 +827,12 @@ const ConsumptionChart = ({
             stressStartX={stressStartX}
             stressStartedAt={stressStartedAt}
             stressPhase={stressPhase}
-            stressBands={stressBands}
+            stressBands={showForecast ? undefined : stressBands}
+            forecastNowTime={forecastBundle?.nowTime}
+            forecastEndTime={forecastEndTime}
+            forecastZones={forecastBundle?.zones}
+            forecastMarkers={forecastBundle?.markers}
+            showForecast={showForecast}
             plottedAnomalies={plottedAnomalies}
             onAnomalyClick={handleAnomalyClick}
           />

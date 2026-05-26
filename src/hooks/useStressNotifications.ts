@@ -1,14 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { notification } from 'antd';
+import { useNotificationLogOptional } from '../context/NotificationLogContext';
 import { playAlertSound, type AlertSoundKind } from '../utils/alertSound';
 import type { AlertRecord, AnomalyRecord } from '../api/hooks';
-
-const SEVERITY_LABEL: Record<string, string> = {
-  low: 'Низкий',
-  medium: 'Средний',
-  high: 'Высокий',
-  critical: 'Критический',
-};
+import {
+  alertLogTitle,
+  buildAlertLogEntry,
+  buildAnomalyLogEntry,
+  classifyAlertKind,
+  type NotificationLogKind,
+} from '../utils/notificationLogUtils';
 
 const SEVERITY_COLOR: Record<string, string> = {
   low: '#52c41a',
@@ -17,28 +18,7 @@ const SEVERITY_COLOR: Record<string, string> = {
   critical: '#ff4d4f',
 };
 
-type AlertKind = 'predict' | 'precursor' | 'info';
-
-function classifyAlert(alert: AlertRecord): AlertKind {
-  const msg = alert.message.toLowerCase();
-  if (msg.startsWith('прогноз ·')) return 'predict';
-  if (msg.startsWith('сигнал ·')) return 'precursor';
-  return 'info';
-}
-
-function alertTitle(alert: AlertRecord, kind: AlertKind): string {
-  if (kind === 'predict') {
-    const m = alert.message.match(/прогноз · (\d+) дн\./i);
-    return m ? `Прогноз · ${m[1]} дн.` : 'Прогноз ML';
-  }
-  if (kind === 'precursor') {
-    const m = alert.message.match(/сигнал · (\d+) дн\./i);
-    return m ? `Сигнал · ${m[1]} дн.` : 'Сигнал ML';
-  }
-  return `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`;
-}
-
-function alertSoundKind(alert: AlertRecord, kind: AlertKind): AlertSoundKind {
+function alertSoundKind(alert: AlertRecord, kind: NotificationLogKind): AlertSoundKind {
   if (kind === 'predict') return 'predict';
   if (kind === 'precursor') return 'precursor';
   return alert.severity as AlertSoundKind;
@@ -59,6 +39,7 @@ export function useStressNotifications({
   onMlTrigger,
   stressStartedAt,
 }: UseStressNotificationsOptions) {
+  const log = useNotificationLogOptional();
   const seenAnomalyIds = useRef(new Set<string>());
   const seenAlertIds = useRef(new Set<string>());
   const mlTriggered = useRef(false);
@@ -123,10 +104,13 @@ export function useStressNotifications({
       if (stressStartedAt && new Date(alert.triggered_at).getTime() < stressStartedAt - 5000) return;
       seenAlertIds.current.add(alert.id);
 
-      const kind = classifyAlert(alert);
+      const kind = classifyAlertKind(alert);
+      const entry = buildAlertLogEntry(alert);
+      log?.addEntry(entry);
+
       playAlertSound(alertSoundKind(alert, kind));
 
-      const title = alertTitle(alert, kind);
+      const title = alertLogTitle(alert, kind);
       if (document.visibilityState === 'hidden' && typeof Notification !== 'undefined') {
         if (Notification.permission === 'granted') {
           new Notification(title, { body: alert.message, silent: false });
@@ -137,21 +121,23 @@ export function useStressNotifications({
 
       notification.open({
         message: title,
-        description: kind === 'info' ? alert.message : undefined,
+        description: 'Нажмите для подробностей',
         placement: 'bottomRight',
         duration: kind === 'predict' ? 4 : kind === 'precursor' ? 5 : 6,
         type: kind === 'predict' ? 'info' : kind === 'precursor' ? 'warning' : undefined,
         style: {
           width: 300,
+          cursor: 'pointer',
           borderLeft: kind === 'predict'
             ? '4px solid #1677ff'
             : kind === 'precursor'
               ? '4px solid #722ed1'
               : `4px solid ${SEVERITY_COLOR[alert.severity] ?? '#999'}`,
         },
+        onClick: () => log?.openDetail(entry),
       });
     });
-  }, [active, alerts, stressStartedAt]);
+  }, [active, alerts, stressStartedAt, log]);
 
   useEffect(() => {
     if (!active) return;
@@ -169,6 +155,9 @@ export function useStressNotifications({
       if (stressStartedAt && new Date(a.time).getTime() < stressStartedAt - 5000) return;
       seenAnomalyIds.current.add(a.id);
 
+      const entry = buildAnomalyLogEntry(a);
+      log?.addEntry(entry);
+
       playAlertSound(a.severity as AlertSoundKind);
       if (document.visibilityState === 'hidden' && typeof Notification !== 'undefined') {
         if (Notification.permission === 'granted') {
@@ -180,15 +169,17 @@ export function useStressNotifications({
       }
       notification.open({
         message: 'Подтверждено',
-        description: `${a.sensor_label ?? a.category}`,
+        description: 'Нажмите для подробностей',
         placement: 'bottomRight',
         duration: 4,
         type: 'warning',
         style: {
           width: 280,
+          cursor: 'pointer',
           borderLeft: `4px solid ${SEVERITY_COLOR[a.severity] ?? '#999'}`,
         },
+        onClick: () => log?.openDetail(entry),
       });
     });
-  }, [active, anomalies, stressStartedAt]);
+  }, [active, anomalies, stressStartedAt, log]);
 }

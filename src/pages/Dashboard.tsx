@@ -296,7 +296,7 @@ const Dashboard = () => {
             sensors={sensors}
             refetchInterval={stressActive ? POLL_MS : false}
             anomalyMarkers={stressActive ? anomalyMarkers : []}
-            liveWindowMinutes={30}
+            liveWindowMinutes={stressActive ? 15 : 30}
             stressPhase={stressActive ? stressPhase : undefined}
             stressStartedAt={stressActive ? stressStartedAt : undefined}
             stressStep={stressActive ? stressStep : undefined}

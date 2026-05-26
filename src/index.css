@@ -370,6 +370,40 @@ a { color: inherit; text-decoration: none; }
   padding: 8px 16px 10px;
 }
 
+.notification-log {
+  position: fixed;
+  bottom: 52px;
+  left: 16px;
+  z-index: 95;
+  width: min(320px, calc(100vw - 32px));
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(13, 40, 24, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(13, 40, 24, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.notification-log--expanded .notification-log__list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.notification-log__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(13, 40, 24, 0.08);
+}
+
+.notification-log__item:hover {
+  background: rgba(22, 119, 255, 0.06);
+}
+
+.notification-detail-modal .ant-modal-body {
+  padding-top: 16px;
+}
+
 .chart-card--stable .ant-card-body {
   min-height: 480px;
 }
@@ -388,6 +422,25 @@ a { color: inherit; text-decoration: none; }
 .chart-card__legend-toggle--stable {
   min-height: 32px;
   margin-bottom: 8px;
+}
+
+.chart-forecast-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  min-height: 28px;
+}
+
+.chart-forecast-legend__item {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border-left: 3px solid;
+  background: rgba(255, 255, 255, 0.7);
+  border-top: 1px solid rgba(13, 40, 24, 0.06);
+  border-right: 1px solid rgba(13, 40, 24, 0.06);
+  border-bottom: 1px solid rgba(13, 40, 24, 0.06);
 }
 
 .chart-shell {
