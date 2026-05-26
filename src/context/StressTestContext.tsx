@@ -25,7 +25,7 @@ import { useStressNotifications } from '../hooks/useStressNotifications';
 
 const POLL_MS = 2000;
 const STRESS_END_GRACE_MS = 5_000;
-const RETRAIN_STEPS = [15, 30, 60, 90];
+const RETRAIN_STEPS = [9, 18, 36, 54];
 
 export type { StressPhaseInfo };
 
@@ -71,7 +71,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   const retrainDoneRef = useRef(new Set<number>());
   const retrainChainRef = useRef(Promise.resolve());
   const startedAtRef = useRef<number | undefined>(undefined);
-  const durationSecRef = useRef(300);
+  const durationSecRef = useRef(180);
 
   const [active, setActive] = useState(false);
   const [equipmentId, setEquipmentId] = useState<string>();

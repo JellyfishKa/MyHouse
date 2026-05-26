@@ -22,6 +22,12 @@ function isPrecursorAlert(alert: AlertRecord): boolean {
   return msg.includes('предупреждение') || msg.includes('через ~');
 }
 
+function isTrendAlert(alert: AlertRecord): boolean {
+  const msg = alert.message.toLowerCase();
+  return msg.includes('drift') || msg.includes('тренд') || msg.includes('plateau')
+    || msg.includes('oscillation') || msg.includes('underconsumption');
+}
+
 interface UseStressNotificationsOptions {
   active: boolean;
   anomalies: AnomalyRecord[];
@@ -102,6 +108,7 @@ export function useStressNotifications({
       seenAlertIds.current.add(alert.id);
 
       const precursor = isPrecursorAlert(alert);
+      const trendInfo = isTrendAlert(alert);
       const kind: AlertSoundKind = precursor ? 'precursor' : alert.severity;
 
       playAlertSound(kind);
@@ -118,7 +125,9 @@ export function useStressNotifications({
       notification.open({
         message: precursor
           ? 'Возможная аномалия через ~6 с'
-          : `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`,
+          : trendInfo
+            ? `Тренд / паттерн · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`
+            : `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`,
         description: alert.message,
         placement: 'bottomRight',
         duration: precursor ? 5 : 6,

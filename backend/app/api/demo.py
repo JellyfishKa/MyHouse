@@ -1,4 +1,5 @@
 import asyncio
+import math
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -24,83 +25,129 @@ from app.models.reading import StressTestRequest, StressTestResponse
 
 router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
 
-# (step, kind, category, severity, message)
-STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str]] = [
+STRESS_DEFAULT_DURATION_SEC = 180  # 3 minutes
+STRESS_TICK_SEC = 2
+
+# Step thresholds (1 step = STRESS_TICK_SEC seconds)
+S = {
+    "baseline_end": 9,
+    "spike_alert": 7,
+    "spike": 9,
+    "drift_alert": 13,
+    "cooling_alert": 16,
+    "cooling_plateau": 18,
+    "lighting_alert": 27,
+    "lighting_low": 29,
+    "ups_alert": 34,
+    "ups_osc": 36,
+    "critical_alert": 51,
+    "critical_plateau": 53,
+    "finale": 54,
+    "servers_drift_end": 17,
+    "cooling_end": 29,
+    "lighting_end": 39,
+    "ups_end": 51,
+}
+
+# (step, kind, category, severity, message, pattern)
+# pattern: spike | drift | plateau_high | plateau_low | oscillation | critical_plateau
+STRESS_SCHEDULE: list[tuple[int, str, SensorCategory | None, SeverityLevel, str, str]] = [
     (
-        12,
+        S["spike_alert"],
         "alert",
         SensorCategory.SERVERS,
         SeverityLevel.LOW,
-        "Предупреждение: через ~6 с ожидается отклонение на линии серверов",
+        "Предупреждение: через ~6 с — скачок (spike) на линии серверов",
+        "",
     ),
     (
-        15,
+        S["spike"],
         "anomaly",
         SensorCategory.SERVERS,
         SeverityLevel.LOW,
-        "Стресс-тест: отклонение на линии серверов (low)",
+        "Spike: кратковременный скачок потребления серверов",
+        "spike",
     ),
     (
-        27,
+        S["drift_alert"],
+        "alert",
+        SensorCategory.SERVERS,
+        SeverityLevel.LOW,
+        "Drift: восходящий тренд потребления серверов — постепенный рост нагрузки",
+        "",
+    ),
+    (
+        S["cooling_alert"],
         "alert",
         SensorCategory.COOLING,
         SeverityLevel.MEDIUM,
-        "Предупреждение: через ~6 с ожидается рост нагрузки охлаждения",
+        "Предупреждение: через ~6 с — устойчиво повышенное потребление охлаждения",
+        "",
     ),
     (
-        30,
+        S["cooling_plateau"],
         "anomaly",
         SensorCategory.COOLING,
         SeverityLevel.MEDIUM,
-        "Стресс-тест: рост нагрузки охлаждения (medium)",
+        "Plateau ↑: стабильно повышенная нагрузка охлаждения (+15%)",
+        "plateau_high",
     ),
     (
-        57,
+        S["lighting_alert"],
+        "alert",
+        SensorCategory.LIGHTING,
+        SeverityLevel.MEDIUM,
+        "Предупреждение: через ~6 с — аномально низкое потребление освещения",
+        "",
+    ),
+    (
+        S["lighting_low"],
+        "anomaly",
+        SensorCategory.LIGHTING,
+        SeverityLevel.MEDIUM,
+        "Underconsumption ↓: устойчиво пониженное потребление (-28%)",
+        "plateau_low",
+    ),
+    (
+        S["ups_alert"],
         "alert",
         SensorCategory.UPS,
         SeverityLevel.HIGH,
-        "Предупреждение: через ~6 с ожидается нестабильность ИБП",
+        "Предупреждение: через ~6 с — колебания нагрузки ИБП (oscillation)",
+        "",
     ),
     (
-        60,
+        S["ups_osc"],
         "anomaly",
         SensorCategory.UPS,
         SeverityLevel.HIGH,
-        "Стресс-тест: нестабильность ИБП (high)",
+        "Oscillation: нестабильное потребление ИБП (±12%)",
+        "oscillation",
     ),
     (
-        87,
+        S["critical_alert"],
         "alert",
         SensorCategory.SERVERS,
         SeverityLevel.CRITICAL,
-        "Предупреждение: через ~6 с ожидается критическое превышение на серверах",
+        "Предупреждение: через ~6 с — критический plateau на серверах",
+        "",
     ),
     (
-        90,
+        S["critical_plateau"],
         "anomaly",
         SensorCategory.SERVERS,
         SeverityLevel.CRITICAL,
-        "Стресс-тест: критическое превышение на серверах",
+        "Critical plateau: длительное повышенное потребление серверов (+42%)",
+        "critical_plateau",
     ),
     (
-        90,
+        S["finale"],
         "alert",
         None,
         SeverityLevel.CRITICAL,
-        "Стресс-тест: критический ток — требуется вмешательство",
+        "Стресс-тест: все типы девиаций продемонстрированы — spike, drift, plateau, underconsumption, oscillation",
+        "",
     ),
-]
-
-# (from_step, category, multiplier) — последнее подходящее правило задаёт множитель
-PHASE_MULTIPLIERS: list[tuple[int, SensorCategory, float]] = [
-    (12, SensorCategory.SERVERS, 1.05),
-    (15, SensorCategory.SERVERS, 1.08),
-    (27, SensorCategory.COOLING, 1.05),
-    (30, SensorCategory.COOLING, 1.15),
-    (57, SensorCategory.UPS, 1.05),
-    (60, SensorCategory.UPS, 1.28),
-    (87, SensorCategory.SERVERS, 1.10),
-    (90, SensorCategory.SERVERS, 1.42),
 ]
 
 CATEGORY_BASE_W: dict[SensorCategory, tuple[float, float]] = {
@@ -110,11 +157,13 @@ CATEGORY_BASE_W: dict[SensorCategory, tuple[float, float]] = {
     SensorCategory.LIGHTING: (80.0, 0.15),
 }
 
-_SEVERITY_FACTOR: dict[SeverityLevel, float] = {
-    SeverityLevel.LOW: 1.08,
-    SeverityLevel.MEDIUM: 1.15,
-    SeverityLevel.HIGH: 1.28,
-    SeverityLevel.CRITICAL: 1.42,
+_PATTERN_FACTOR: dict[str, float] = {
+    "spike": 1.10,
+    "drift": 1.12,
+    "plateau_high": 1.15,
+    "plateau_low": 0.72,
+    "oscillation": 1.14,
+    "critical_plateau": 1.42,
 }
 
 _active_stress_workers: set[uuid.UUID] = set()
@@ -133,24 +182,57 @@ def _category_baseline_w(category: SensorCategory, hour: int) -> float:
     return base * mult * _daily_factor(hour)
 
 
-def _category_multiplier(category: SensorCategory, step: int) -> float:
-    mult = 1.0
-    for from_step, cat, m in PHASE_MULTIPLIERS:
-        if cat == category and step >= from_step:
-            mult = m
-    return mult
+def _pattern_multiplier(category: SensorCategory, step: int) -> float:
+    """Continuous telemetry patterns for live chart (not just point anomalies)."""
+    if category == SensorCategory.SERVERS:
+        if step < S["spike"]:
+            return 1.0
+        if step < S["servers_drift_end"]:
+            base = 1.10 if step == S["spike"] else 1.08
+            return base + (step - S["spike"]) * 0.011
+        if step < S["critical_plateau"]:
+            return 1.12 + (step - S["servers_drift_end"]) * 0.003
+        return 1.42
+
+    if category == SensorCategory.COOLING:
+        if step < S["cooling_plateau"]:
+            return 1.0
+        if step < S["cooling_end"]:
+            return 1.15 + 0.015 * math.sin(step * 0.7)
+        return 1.12
+
+    if category == SensorCategory.LIGHTING:
+        if step < S["lighting_low"]:
+            return 1.0
+        if step < S["lighting_end"]:
+            return 0.72
+        return 0.88
+
+    if category == SensorCategory.UPS:
+        if step < S["ups_osc"]:
+            return 1.0
+        if step < S["ups_end"]:
+            return 1.0 + 0.12 * math.sin(step * 0.85)
+        return 1.18
+
+    return 1.0
 
 
-def _anomaly_values(category: SensorCategory, severity: SeverityLevel, hour: int) -> tuple[float, float]:
+def _anomaly_values(
+    category: SensorCategory,
+    hour: int,
+    pattern: str,
+) -> tuple[float, float]:
     expected = _category_baseline_w(category, hour)
-    actual = expected * _SEVERITY_FACTOR.get(severity, 1.10)
+    factor = _PATTERN_FACTOR.get(pattern, 1.10)
+    actual = expected * factor
     return round(actual, 3), round(expected, 3)
 
 
 def _sensor_reading_value(category: SensorCategory, step: int, hour: int, rng: random.Random) -> float:
     baseline = _category_baseline_w(category, hour)
-    mult = _category_multiplier(category, step)
-    noise = rng.gauss(0, baseline * 0.02)
+    mult = _pattern_multiplier(category, step)
+    noise = rng.gauss(0, baseline * 0.015)
     return round(max(1.0, baseline * mult + noise), 3)
 
 
@@ -160,7 +242,7 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
     _active_stress_workers.add(equipment_id)
     step = 0
     deadline = datetime.now(timezone.utc) + timedelta(seconds=duration_sec)
-    fired: set[tuple[int, str, str, str]] = set()
+    fired: set[tuple[int, str, str, str, str]] = set()
     rng = random.Random(42)
 
     try:
@@ -181,7 +263,7 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                 hour = now.hour
                 base_current = 9.0 + 2.5 * _daily_factor(hour)
 
-                servers_mult = _category_multiplier(SensorCategory.SERVERS, step)
+                servers_mult = _pattern_multiplier(SensorCategory.SERVERS, step)
                 current_a = base_current * (0.9 + (servers_mult - 1.0) * 0.3)
 
                 db.add(
@@ -211,9 +293,9 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                         )
                     )
 
-                for sched_step, kind, category, severity, message in STRESS_SCHEDULE:
+                for sched_step, kind, category, severity, message, pattern in STRESS_SCHEDULE:
                     cat_key = category.value if category else "none"
-                    key = (sched_step, kind, cat_key, severity.value)
+                    key = (sched_step, kind, cat_key, severity.value, pattern)
                     if step >= sched_step and key not in fired:
                         fired.add(key)
                         if kind == "alert":
@@ -224,8 +306,8 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                                     message=message,
                                 )
                             )
-                        elif kind == "anomaly" and category and category in sensor_by_cat:
-                            actual, expected = _anomaly_values(category, severity, hour)
+                        elif kind == "anomaly" and category and category in sensor_by_cat and pattern:
+                            actual, expected = _anomaly_values(category, hour, pattern)
                             db.add(
                                 Anomaly(
                                     sensor_id=sensor_by_cat[category],
@@ -238,7 +320,7 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
 
                 await db.commit()
                 step += 1
-                await asyncio.sleep(2)
+                await asyncio.sleep(STRESS_TICK_SEC)
     finally:
         _active_stress_workers.discard(equipment_id)
 

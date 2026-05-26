@@ -17,11 +17,12 @@ export function computeStressStep(startedAt?: number, now = Date.now()): number 
 }
 
 export function computeStressPhase(step: number): StressPhaseInfo {
-  if (step < 15) return { phase: 1, total: 4, label: 'Базовая линия' };
-  if (step < 30) return { phase: 2, total: 4, label: 'servers +8%' };
-  if (step < 60) return { phase: 3, total: 4, label: 'cooling +15%' };
-  if (step < 90) return { phase: 4, total: 4, label: 'ups +28%' };
-  return { phase: 4, total: 4, label: 'servers +42% critical' };
+  if (step < 9) return { phase: 1, total: 6, label: 'Базовая линия' };
+  if (step < 18) return { phase: 2, total: 6, label: 'Spike + drift · серверы' };
+  if (step < 29) return { phase: 3, total: 6, label: 'Plateau ↑ · охлаждение' };
+  if (step < 39) return { phase: 4, total: 6, label: 'Underconsumption ↓ · освещение' };
+  if (step < 51) return { phase: 5, total: 6, label: 'Oscillation · ИБП' };
+  return { phase: 6, total: 6, label: 'Critical plateau · серверы' };
 }
 
 interface StressTimelineProps {
@@ -33,7 +34,7 @@ interface StressTimelineProps {
 export default function StressTimeline({ startedAt, endsAt, tick = 0 }: StressTimelineProps) {
   const { elapsedSec, remainingSec, progress, startLabel } = useMemo(() => {
     const elapsed = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
-    const totalSec = startedAt && endsAt ? Math.floor((endsAt - startedAt) / 1000) : 300;
+    const totalSec = startedAt && endsAt ? Math.floor((endsAt - startedAt) / 1000) : 180;
     const remaining = Math.max(0, totalSec - elapsed);
     const pct = totalSec > 0 ? Math.min(100, Math.round((elapsed / totalSec) * 100)) : 0;
     const startLabel = startedAt

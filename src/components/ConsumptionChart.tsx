@@ -638,7 +638,7 @@ const ConsumptionChart = ({
             {plottedAnomalies.length > 0
               ? ` · ${plottedAnomalies.length} аномал. — клик по точке`
               : stressStartedAt && isLive
-                ? ' · аномалии на шагах 15/30/60/90 с'
+                ? ' · паттерны на шагах 9–53 с (~3 мин)'
                 : '\u00A0'}
           </Text>
         </div>

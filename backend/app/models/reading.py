@@ -250,7 +250,7 @@ class RulML(BaseModel):
 class StressTestRequest(BaseModel):
     object_id: UUID
     equipment_id: Optional[UUID] = None
-    duration_seconds: int = Field(default=60, ge=10, le=300)
+    duration_seconds: int = Field(default=180, ge=10, le=300)
 
 
 class StressTestResponse(BaseModel):

@@ -139,14 +139,14 @@ const Dashboard = () => {
 
       const result = await stressMutation.mutateAsync({
         object_id: selectedObjectId,
-        duration_seconds: 300,
+        duration_seconds: 180,
       });
       startStressTest({
         equipmentId: result.equipment_id,
         objectId: selectedObjectId,
         durationSeconds: result.duration_seconds,
       });
-      messageApi.warning('Стресс-тест запущен на 5 минут — следите за уведомлениями');
+      messageApi.warning('Стресс-тест запущен на 3 минуты — следите за уведомлениями');
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Неизвестная ошибка';
       if (msg.includes('409') || msg.toLowerCase().includes('already running')) {

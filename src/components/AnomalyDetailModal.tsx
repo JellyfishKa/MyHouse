@@ -3,9 +3,12 @@ import { Button, Descriptions, Modal, Tag, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { AnomalyRecord } from '../api/hooks';
 import {
+  anomalyPatternColor,
+  anomalyPatternLabel,
   anomalySeverityLabel,
   formatAnomalyDeviation,
   inferAnomalyCause,
+  inferAnomalyPattern,
 } from '../utils/anomalyUtils';
 
 const { Paragraph, Text } = Typography;
@@ -54,6 +57,11 @@ function AnomalyDetailModal({ anomaly, open, onClose }: AnomalyDetailModalProps)
     >
       {anomaly && (
         <>
+          <div style={{ marginBottom: 12 }}>
+            <Tag color={anomalyPatternColor(inferAnomalyPattern(anomaly))}>
+              {anomalyPatternLabel(inferAnomalyPattern(anomaly))}
+            </Tag>
+          </div>
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="Время">
               {new Date(anomaly.time).toLocaleString('ru-RU')}
