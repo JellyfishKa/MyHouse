@@ -65,14 +65,14 @@ def daily_factor(hour: int) -> float:
     )
 
 
-def seed_sensor_telemetry(api: str, object_id: str, now: datetime, rng: random.Random) -> None:
+def seed_sensor_telemetry(api: str, object_id: str, now: datetime, rng: random.Random, days: int) -> None:
     sensors = get(api, f"/objects/{object_id}/sensors")
     if not sensors:
         print("No sensors found for telemetry seed.")
         return
 
-    print(f"Seeding sensor telemetry for {len(sensors)} sensors (7 days, 1/min)...")
-    total_points = 10080
+    total_points = days * 24 * 60
+    print(f"Seeding sensor telemetry for {len(sensors)} sensors ({days} days, 1/min)...")
 
     for sensor in sensors:
         category = sensor.get("category", "servers")
@@ -101,17 +101,24 @@ def seed_sensor_telemetry(api: str, object_id: str, now: datetime, rng: random.R
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Seed equipment + 7 days telemetry")
+    parser = argparse.ArgumentParser(description="Seed equipment + telemetry history")
     parser.add_argument(
         "--api",
         default=os.getenv("API_URL", DEFAULT_API),
         help=f"Backend API base URL (default: {DEFAULT_API} or API_URL env)",
     )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Days of historical telemetry to generate (default: 7, use 3 for quick prod seed)",
+    )
     args = parser.parse_args()
     api = args.api.rstrip("/")
+    days = max(1, min(args.days, 30))
 
     print(f"API: {api}")
-    print("Загрузка 7 дней данных (~40k точек) — может занять 10–20 минут…")
+    print(f"Загрузка {days} дней данных (~{days * 1440 * 4} точек) — может занять несколько минут…")
 
     objects = get(api, "/objects")
     if not objects:
@@ -143,9 +150,9 @@ def main():
     now = datetime.now(timezone.utc)
     rng = random.Random(42)
 
-    print("Generating 7 days of equipment readings (10080 points)...")
+    print(f"Generating {days} days of equipment readings ({days * 1440} points)...")
     readings = []
-    total_eq_points = 10080
+    total_eq_points = days * 24 * 60
     for i in range(total_eq_points):
         ts = now - timedelta(minutes=total_eq_points - i)
         hour = ts.hour
@@ -165,7 +172,7 @@ def main():
     if readings:
         post(api, f"/equipment/{eq_id}/readings", {"readings": readings})
 
-    seed_sensor_telemetry(api, obj["id"], now, rng)
+    seed_sensor_telemetry(api, obj["id"], now, rng, days)
 
     print(f"Done! Equipment ID: {eq_id}")
     print(f"Open dashboard and select: {obj['name']}")

@@ -13,7 +13,8 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from db import (fetch_equipment_ids_by_object, fetch_equipment_readings,
+from db import (exclude_anomaly_windows, fetch_anomaly_times,
+                fetch_equipment_ids_by_object, fetch_equipment_readings,
                 fetch_readings, fetch_readings_by_object, insert_anomalies)
 from models import MLModel
 from rul_model import RULModel
@@ -30,6 +31,17 @@ class DetectRequest(BaseModel):
 class DetectResponse(BaseModel):
     anomalies_found: int
     anomalies_inserted: int
+
+
+class RetrainRequest(BaseModel):
+    object_id: UUID
+    days: int = 1
+    exclude_since: Optional[datetime] = None
+
+
+class RetrainResponse(BaseModel):
+    windows_trained: int
+    model_saved: bool
 
 
 def classify_severity(value: float, expected: float) -> str:
@@ -116,6 +128,40 @@ async def detect_anomalies(request: DetectRequest):
         anomalies_found=len(all_anomalies),
         anomalies_inserted=inserted,
     )
+
+
+@app.post("/api/v1/retrain", response_model=RetrainResponse)
+async def retrain_model(request: RetrainRequest):
+    df = fetch_readings_by_object(str(request.object_id), request.days)
+
+    if df.empty:
+        return RetrainResponse(windows_trained=0, model_saved=False)
+
+    if request.exclude_since:
+        anomaly_times = fetch_anomaly_times(
+            str(request.object_id),
+            since=request.exclude_since.isoformat(),
+        )
+        df = exclude_anomaly_windows(df, anomaly_times)
+
+    if len(df) < 20:
+        return RetrainResponse(windows_trained=0, model_saved=False)
+
+    pivot = df.pivot_table(
+        index="time", columns="sensor_category", values="value", aggfunc="mean"
+    ).reset_index()
+
+    if len(pivot) < 10:
+        return RetrainResponse(windows_trained=0, model_saved=False)
+
+    window_size = min(100, max(10, len(pivot) // 5))
+    model = MLModel(window_size=window_size)
+    try:
+        X = model.fit(pivot, save=True)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Retrain failed: {exc}")
+
+    return RetrainResponse(windows_trained=len(X), model_saved=True)
 
 
 # ─── Health Score ──────────────────────────────────────────────────────────────

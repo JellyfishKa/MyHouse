@@ -40,7 +40,11 @@ def fetch_readings(sensor_id: str, days: int = 7) -> pd.DataFrame:
         conn.close()
 
 
-def fetch_readings_by_object(object_id: str, days: int = 7) -> pd.DataFrame:
+def fetch_readings_by_object(
+    object_id: str,
+    days: int = 7,
+    exclude_after: str | None = None,
+) -> pd.DataFrame:
     """Fetch recent readings for all sensors of an object."""
     conn = get_connection()
     try:
@@ -56,12 +60,49 @@ def fetch_readings_by_object(object_id: str, days: int = 7) -> pd.DataFrame:
                   JOIN sensors s2 ON s2.id = r2.sensor_id
                   WHERE s2.object_id = %s
               )
-            ORDER BY r.time ASC
         """
-        df = pd.read_sql(query, conn, params=(object_id, days, object_id))
+        params: list = [object_id, days, object_id]
+        if exclude_after:
+            query += " AND r.time < %s"
+            params.append(exclude_after)
+        query += " ORDER BY r.time ASC"
+        df = pd.read_sql(query, conn, params=params)
         return df
     finally:
         conn.close()
+
+
+def fetch_anomaly_times(object_id: str, since: str | None = None) -> list:
+    """Return detected_at timestamps for anomalies on an object's sensors."""
+    conn = get_connection()
+    try:
+        query = """
+            SELECT a.detected_at
+            FROM anomalies a
+            JOIN sensors s ON s.id = a.sensor_id
+            WHERE s.object_id = %s
+        """
+        params: list = [object_id]
+        if since:
+            query += " AND a.detected_at >= %s"
+            params.append(since)
+        query += " ORDER BY a.detected_at ASC"
+        df = pd.read_sql(query, conn, params=params)
+        return df["detected_at"].tolist() if not df.empty else []
+    finally:
+        conn.close()
+
+
+def exclude_anomaly_windows(df: pd.DataFrame, anomaly_times: list, window_minutes: int = 3) -> pd.DataFrame:
+    """Drop readings within ±window_minutes of each anomaly timestamp."""
+    if df.empty or not anomaly_times:
+        return df
+    mask = pd.Series(True, index=df.index)
+    for ts in anomaly_times:
+        t = pd.Timestamp(ts)
+        delta = pd.Timedelta(minutes=window_minutes)
+        mask &= ~((df["time"] >= t - delta) & (df["time"] <= t + delta))
+    return df.loc[mask]
 
 
 def fetch_equipment_readings(equipment_id: str, limit: int = 2000) -> pd.DataFrame:

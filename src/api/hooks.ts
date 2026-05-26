@@ -51,6 +51,11 @@ export interface AlertRecord {
   acknowledged: boolean;
 }
 
+export interface AnomalyMarker {
+  time: string;
+  severity: AnomalyRecord['severity'];
+}
+
 export interface AggregatedReading {
   time: string;
   value: number | null;
@@ -71,6 +76,17 @@ export interface DetectRequest {
 export interface DetectResponse {
   anomalies_found: number;
   anomalies_inserted: number;
+}
+
+export interface RetrainRequest {
+  object_id?: string;
+  days?: number;
+  exclude_since?: string;
+}
+
+export interface RetrainResponse {
+  windows_trained: number;
+  model_saved: boolean;
 }
 
 export interface HealthScore {
@@ -123,7 +139,7 @@ export async function fetchTelemetry(
   sensorId: string,
   from: string,
   to: string,
-  agg: 'raw' | 'hour' | 'day' = 'hour',
+  agg: 'raw' | 'minute' | 'hour' | 'day' = 'hour',
 ) {
   const { data } = await api.get<AggregatedReading[]>(`/telemetry/${sensorId}`, {
     params: { from, to, agg },
@@ -194,7 +210,7 @@ export function useTelemetry(
   sensorId: string,
   from: string,
   to: string,
-  agg: 'raw' | 'hour' | 'day' = 'hour',
+  agg: 'raw' | 'minute' | 'hour' | 'day' = 'hour',
 ) {
   return useQuery<AggregatedReading[]>({
     queryKey: ['telemetry', sensorId, from, to, agg],
@@ -289,6 +305,15 @@ export function useTriggerDetection() {
   return useMutation<DetectResponse, Error, DetectRequest>({
     mutationFn: async (payload) => {
       const { data } = await api.post('/ml/detect', payload);
+      return data;
+    },
+  });
+}
+
+export function useRetrainMl() {
+  return useMutation<RetrainResponse, Error, RetrainRequest>({
+    mutationFn: async (payload) => {
+      const { data } = await api.post('/ml/retrain', payload);
       return data;
     },
   });

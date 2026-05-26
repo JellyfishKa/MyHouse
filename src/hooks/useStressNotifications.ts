@@ -10,6 +10,18 @@ const SEVERITY_LABEL: Record<string, string> = {
   critical: 'Критический',
 };
 
+const SEVERITY_COLOR: Record<string, string> = {
+  low: '#52c41a',
+  medium: '#faad14',
+  high: '#fa8c16',
+  critical: '#ff4d4f',
+};
+
+function isPrecursorAlert(alert: AlertRecord): boolean {
+  const msg = alert.message.toLowerCase();
+  return msg.includes('предупреждение') || msg.includes('через ~');
+}
+
 interface UseStressNotificationsOptions {
   active: boolean;
   anomalies: AnomalyRecord[];
@@ -84,17 +96,24 @@ export function useStressNotifications({
       if (stressStartedAt && new Date(alert.triggered_at).getTime() < stressStartedAt - 5000) return;
       seenAlertIds.current.add(alert.id);
 
-      const isPrecursor = alert.message.toLowerCase().includes('предупреждение')
-        || alert.message.toLowerCase().includes('через');
-      const kind: AlertSoundKind = isPrecursor ? 'precursor' : alert.severity;
+      const precursor = isPrecursorAlert(alert);
+      const kind: AlertSoundKind = precursor ? 'precursor' : alert.severity;
 
       playAlertSound(kind);
       notification.open({
-        message: isPrecursor ? 'Предупреждение' : `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`,
+        message: precursor
+          ? 'Возможная аномалия через ~6 с'
+          : `Оповещение · ${SEVERITY_LABEL[alert.severity] ?? alert.severity}`,
         description: alert.message,
         placement: 'bottomRight',
-        duration: 6,
-        style: { width: 320 },
+        duration: precursor ? 5 : 6,
+        type: precursor ? 'info' : undefined,
+        style: {
+          width: 320,
+          borderLeft: precursor
+            ? '4px solid #1677ff'
+            : `4px solid ${SEVERITY_COLOR[alert.severity] ?? '#999'}`,
+        },
       });
     });
   }, [active, alerts, stressStartedAt]);
@@ -117,11 +136,15 @@ export function useStressNotifications({
 
       playAlertSound(a.severity as AlertSoundKind);
       notification.open({
-        message: `Аномалия · ${SEVERITY_LABEL[a.severity] ?? a.severity}`,
+        message: `Аномалия подтверждена · ${SEVERITY_LABEL[a.severity] ?? a.severity}`,
         description: `${a.sensor_label ?? a.category}: ${a.value.toFixed(1)} Вт (ожид. ${a.expected?.toFixed(1) ?? '—'})`,
         placement: 'bottomRight',
         duration: 7,
-        style: { width: 320 },
+        type: 'warning',
+        style: {
+          width: 320,
+          borderLeft: `4px solid ${SEVERITY_COLOR[a.severity] ?? '#999'}`,
+        },
       });
     });
   }, [active, anomalies, stressStartedAt]);

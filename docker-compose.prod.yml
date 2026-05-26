@@ -15,6 +15,7 @@ services:
   ml:
     volumes: !reset
       - ml_data:/data/ml_results
+      - ml_saved_models:/app/saved_models
     ports: !reset []
 
   frontend:
@@ -50,4 +51,6 @@ volumes:
   caddy_data:
     driver: local
   caddy_config:
+    driver: local
+  ml_saved_models:
     driver: local

@@ -1,13 +1,12 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Alert, Card, Empty, Grid, Select, Segmented, Spin, Typography } from 'antd';
+import { Alert, Card, Checkbox, Empty, Grid, Select, Segmented, Spin, Typography } from 'antd';
 import { useQueries } from '@tanstack/react-query';
 import {
-  Area,
   CartesianGrid,
   ComposedChart,
   Legend,
   Line,
-  ReferenceDot,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,7 +15,7 @@ import {
 import {
   fetchTelemetry,
   type AggregatedReading,
-  type AnomalyRecord,
+  type AnomalyMarker,
   type MonitoringObject,
   type ObjectSensor,
 } from '../api/hooks';
@@ -24,9 +23,12 @@ import {
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
-export interface AnomalyMarker {
-  time: string;
-  severity: AnomalyRecord['severity'];
+export type { AnomalyMarker };
+
+export interface StressPhaseInfo {
+  phase: number;
+  total: number;
+  label: string;
 }
 
 interface ConsumptionChartProps {
@@ -34,6 +36,8 @@ interface ConsumptionChartProps {
   sensors: ObjectSensor[];
   refetchInterval?: number | false;
   anomalyMarkers?: AnomalyMarker[];
+  liveWindowMinutes?: number;
+  stressPhase?: StressPhaseInfo;
 }
 
 type ChartRow = Record<string, number | string | null>;
@@ -54,7 +58,7 @@ const RANGE_LABELS: Record<string, string> = {
   month: '30 дней',
 };
 
-const SEVERITY_DOT: Record<string, string> = {
+const SEVERITY_LINE: Record<string, string> = {
   low: '#52c41a',
   medium: '#faad14',
   high: '#fa8c16',
@@ -90,34 +94,29 @@ const rangeToWindow = (range: string, anchor: Date) => {
   return { from, agg: 'day' as const };
 };
 
+const liveWindow = (anchor: Date, minutes: number) => {
+  const from = new Date(anchor);
+  from.setMinutes(anchor.getMinutes() - minutes);
+  return { from, agg: 'minute' as const };
+};
+
 const buildAnchorDate = (objectItem?: MonitoringObject) =>
   objectItem?.last_reading_at ? new Date(objectItem.last_reading_at) : new Date();
-
-const findNearestY = (chartData: ChartRow[], time: string, key: string): number | undefined => {
-  const target = new Date(time).getTime();
-  let best: ChartRow | undefined;
-  let bestDiff = Infinity;
-  chartData.forEach((row) => {
-    const diff = Math.abs(new Date(String(row.time)).getTime() - target);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = row;
-    }
-  });
-  const v = best?.[key];
-  return typeof v === 'number' ? v : undefined;
-};
 
 const ConsumptionChart = ({
   objectItem,
   sensors,
   refetchInterval,
   anomalyMarkers = [],
+  liveWindowMinutes = 30,
+  stressPhase,
 }: ConsumptionChartProps) => {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const isLive = !!refetchInterval;
+  const percentMode = isLive;
   const [selectedRange, setSelectedRange] = useState('week');
+  const [hiddenSensors, setHiddenSensors] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isLive) setSelectedRange('hour');
@@ -128,9 +127,18 @@ const ConsumptionChart = ({
     [objectItem, isLive],
   );
 
-  const { from, agg } = useMemo(() => rangeToWindow(selectedRange, to), [selectedRange, to]);
+  const { from, agg } = useMemo(() => {
+    if (isLive) return liveWindow(to, liveWindowMinutes);
+    return rangeToWindow(selectedRange, to);
+  }, [isLive, liveWindowMinutes, selectedRange, to]);
+
   const toIso = to.toISOString();
   const fromIso = from.toISOString();
+
+  const visibleSensors = useMemo(
+    () => sensors.filter((s) => !hiddenSensors.has(s.id)),
+    [sensors, hiddenSensors],
+  );
 
   const telemetryQueries = useQueries({
     queries: sensors.map((sensor) => ({
@@ -144,7 +152,7 @@ const ConsumptionChart = ({
   const isLoading = telemetryQueries.some((q) => q.isLoading);
   const hasError = telemetryQueries.some((q) => q.error);
 
-  const chartData = useMemo(() => {
+  const rawChartData = useMemo(() => {
     const timeMap = new Map<string, ChartRow>();
     sensors.forEach((sensor, idx) => {
       const readings = telemetryQueries[idx].data as AggregatedReading[] | undefined;
@@ -159,10 +167,47 @@ const ConsumptionChart = ({
     );
   }, [sensors, telemetryQueries]);
 
+  const baselines = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!percentMode || !rawChartData.length) return map;
+
+    const baselineEnd = new Date(String(rawChartData[0].time)).getTime() + 5 * 60_000;
+    sensors.forEach((sensor) => {
+      const values: number[] = [];
+      rawChartData.forEach((row) => {
+        if (new Date(String(row.time)).getTime() > baselineEnd) return;
+        const v = row[sensor.label];
+        if (typeof v === 'number') values.push(v);
+      });
+      if (values.length) {
+        map.set(sensor.label, values.reduce((a, b) => a + b, 0) / values.length);
+      }
+    });
+    return map;
+  }, [rawChartData, sensors, percentMode]);
+
+  const chartData = useMemo(() => {
+    if (!percentMode) return rawChartData;
+    return rawChartData.map((row) => {
+      const next: ChartRow = { time: row.time };
+      sensors.forEach((sensor) => {
+        const v = row[sensor.label];
+        const base = baselines.get(sensor.label);
+        if (typeof v === 'number' && base && base > 0) {
+          next[sensor.label] = Math.round((v / base) * 1000) / 10;
+          next[`__w_${sensor.label}`] = v;
+        } else {
+          next[sensor.label] = null;
+        }
+      });
+      return next;
+    });
+  }, [rawChartData, sensors, percentMode, baselines]);
+
   const stats = useMemo(() => {
     const values: number[] = [];
     chartData.forEach((row) => {
-      sensors.forEach((s) => {
+      visibleSensors.forEach((s) => {
         const v = row[s.label];
         if (typeof v === 'number') values.push(v);
       });
@@ -173,7 +218,16 @@ const ConsumptionChart = ({
       max: Math.max(...values),
       count: chartData.length,
     };
-  }, [chartData, sensors]);
+  }, [chartData, visibleSensors]);
+
+  const toggleSensor = (id: string) => {
+    setHiddenSensors((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const rangeControl = isMobile ? (
     <Select
@@ -205,12 +259,14 @@ const ConsumptionChart = ({
     );
   }
 
-  const primarySensor = sensors[0]?.label;
+  const yDomain: [number | string, number | string] = percentMode
+    ? [70, 160]
+    : ['dataMin - 5', 'dataMax + 5'];
 
   return (
     <Card
       className="surface-card chart-card"
-      title={`Потребление — ${RANGE_LABELS[selectedRange] ?? selectedRange}`}
+      title={percentMode ? 'Потребление — live (% от нормы)' : `Потребление — ${RANGE_LABELS[selectedRange] ?? selectedRange}`}
       extra={!isMobile ? rangeControl : undefined}
     >
       {isMobile && (
@@ -220,21 +276,35 @@ const ConsumptionChart = ({
       <div className="chart-card__meta">
         <Text type="secondary">
           {isLive
-            ? `Live · до ${to.toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+            ? `Live · ${liveWindowMinutes} мин · ${agg}`
             : `${from.toLocaleDateString('ru-RU')} — ${to.toLocaleDateString('ru-RU')} · ${agg}`}
-          {stats && ` · min ${stats.min.toFixed(0)} / max ${stats.max.toFixed(0)} Вт`}
+          {stressPhase && ` · Фаза ${stressPhase.phase}/${stressPhase.total} · ${stressPhase.label}`}
+          {stats && (
+            percentMode
+              ? ` · min ${stats.min.toFixed(0)}% / max ${stats.max.toFixed(0)}%`
+              : ` · min ${stats.min.toFixed(0)} / max ${stats.max.toFixed(0)} Вт`
+          )}
         </Text>
       </div>
+
+      {isLive && (
+        <div className="chart-card__legend-toggle" style={{ marginBottom: 8 }}>
+          {sensors.map((sensor) => (
+            <Checkbox
+              key={sensor.id}
+              checked={!hiddenSensors.has(sensor.id)}
+              onChange={() => toggleSensor(sensor.id)}
+              style={{ marginRight: 12, fontSize: 12 }}
+            >
+              {sensor.label}
+            </Checkbox>
+          ))}
+        </div>
+      )}
 
       <div className="chart-shell">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -8, bottom: 4 }}>
-            <defs>
-              <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#0f766e" stopOpacity={0.25} />
-                <stop offset="100%" stopColor="#0f766e" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
             <CartesianGrid stroke="#d7e3e0" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="time"
@@ -249,29 +319,44 @@ const ConsumptionChart = ({
                 })
               }
             />
-            <YAxis unit=" Вт" tick={{ fontSize: isMobile ? 10 : 11 }} width={isMobile ? 48 : 56} />
+            <YAxis
+              unit={percentMode ? ' %' : ' Вт'}
+              domain={yDomain}
+              tick={{ fontSize: isMobile ? 10 : 11 }}
+              width={isMobile ? 48 : 56}
+            />
             <Tooltip
               contentStyle={{ borderRadius: 10, border: '1px solid rgba(13,40,24,0.1)' }}
               labelFormatter={(label) => new Date(label).toLocaleString('ru-RU')}
-              formatter={(value, name) => [
-                typeof value === 'number' ? `${value.toFixed(1)} Вт` : String(value),
-                name,
-              ]}
+              formatter={(value, name, item) => {
+                if (typeof value !== 'number') return [String(value), name];
+                const payload = item?.payload as ChartRow | undefined;
+                const wKey = `__w_${String(name)}`;
+                const w = payload?.[wKey];
+                if (percentMode && typeof w === 'number') {
+                  return [`${value.toFixed(1)}% (${w.toFixed(0)} Вт)`, name];
+                }
+                return [`${value.toFixed(1)}${percentMode ? '%' : ' Вт'}`, name];
+              }}
             />
             {!isMobile && <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12 }} />}
 
-            {primarySensor && (
-              <Area
-                type="monotone"
-                dataKey={primarySensor}
-                stroke="none"
-                fill="url(#chartFill)"
-                isAnimationActive={false}
-                legendType="none"
-              />
+            {percentMode && (
+              <ReferenceLine y={100} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: '100%', position: 'insideTopRight', fontSize: 10 }} />
             )}
 
+            {anomalyMarkers.map((m, i) => (
+              <ReferenceLine
+                key={`${m.time}-${m.severity}-${i}`}
+                x={m.time}
+                stroke={SEVERITY_LINE[m.severity] ?? '#999'}
+                strokeDasharray="3 3"
+                strokeWidth={1.5}
+              />
+            ))}
+
             {sensors.map((sensor, index) => {
+              if (hiddenSensors.has(sensor.id)) return null;
               const style = CHART_LINE_STYLES[index % CHART_LINE_STYLES.length];
               return (
                 <Line
@@ -287,18 +372,6 @@ const ConsumptionChart = ({
                 />
               );
             })}
-
-            {primarySensor && anomalyMarkers.map((m, i) => (
-              <ReferenceDot
-                key={`${m.time}-${m.severity}-${i}`}
-                x={m.time}
-                y={findNearestY(chartData, m.time, primarySensor)}
-                r={5}
-                fill={SEVERITY_DOT[m.severity] ?? '#999'}
-                stroke="#fff"
-                strokeWidth={2}
-              />
-            ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

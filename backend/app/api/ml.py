@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
 from app.models.reading import (DetectRequest, DetectResponse,
-                                EquipmentHealthML, PredictionItem, RulML, ServiceHealth)
+                                EquipmentHealthML, PredictionItem, RetrainRequest,
+                                RetrainResponse, RulML, ServiceHealth)
 
 router = APIRouter(prefix="/api/v1/ml", tags=["ML"])
 
@@ -62,6 +63,16 @@ async def run_detection(payload: DetectRequest):
         payload.model_dump(mode="json", exclude_none=True),
     )
     return DetectResponse(**result)
+
+
+@router.post("/retrain", response_model=RetrainResponse)
+async def retrain_model(payload: RetrainRequest):
+    result = await _safe_request(
+        "POST",
+        "/api/v1/retrain",
+        payload.model_dump(mode="json", exclude_none=True),
+    )
+    return RetrainResponse(**result)
 
 
 @router.get("/equipment/{equipment_id}/health", response_model=EquipmentHealthML)

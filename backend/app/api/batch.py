@@ -51,7 +51,7 @@ async def get_sensor_analytics(
     sensor_id: UUID,
     start_from: datetime = Query(..., alias="from"),
     to: datetime = Query(..., alias="to"),
-    agg: Literal["raw", "hour", "day"] = "raw",
+    agg: Literal["raw", "minute", "hour", "day"] = "raw",
     db: AsyncSession = Depends(get_db)
 ):
     # 1. Если нужны сырые данные (без агрегации)
@@ -68,7 +68,11 @@ async def get_sensor_analytics(
 
     # 2. Если нужна агрегация через TimescaleDB (time_bucket)
     else:
-        interval_str = "1 hour" if agg == "hour" else "1 day"
+        interval_str = (
+            "1 minute" if agg == "minute"
+            else "1 hour" if agg == "hour"
+            else "1 day"
+        )
 
         interval_val = text(f"'{interval_str}'::interval")
 

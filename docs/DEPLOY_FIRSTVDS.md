@@ -177,9 +177,17 @@ DOMAIN=pulsetok.duckdns.org ./scripts/seed_production.sh
 ./scripts/seed_production.sh https://pulsetok.duckdns.org
 ```
 
+**Быстрый seed (3 дня)** — если полный 7-дневный прогон слишком долгий:
+
+```bash
+API_URL=https://pulsetok.duckdns.org/api/v1 python3 scripts/seed_demo.py --days 3
+```
+
+> Backend на production **не** слушает `localhost:8000` с хоста — всегда указывайте публичный URL через `API_URL` или `DOMAIN` в `seed_production.sh`.
+
 Скрипт:
 1. Регистрирует объект «Датацентр МГУ» и 4 сенсора через API
-2. Создаёт оборудование и 3 дня истории readings
+2. Создаёт оборудование и историю readings (по умолчанию 7 дней, `--days 3` для быстрого варианта)
 
 Проверка:
 

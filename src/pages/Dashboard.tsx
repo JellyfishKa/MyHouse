@@ -60,6 +60,7 @@ const Dashboard = () => {
     active: stressActive,
     startedAt: stressStartedAt,
     objectId: stressObjectId,
+    stressPhase,
     startStressTest,
   } = useStressTestContext();
   const queryClient = useQueryClient();
@@ -141,7 +142,12 @@ const Dashboard = () => {
       });
       messageApi.warning('Стресс-тест запущен на 5 минут — следите за уведомлениями');
     } catch (error) {
-      messageApi.error({ content: `Не удалось запустить стресс-тест: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`, key: 'stress' });
+      const msg = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      if (msg.includes('409') || msg.toLowerCase().includes('already running')) {
+        messageApi.warning('Стресс-тест уже выполняется');
+      } else {
+        messageApi.error({ content: `Не удалось запустить стресс-тест: ${msg}`, key: 'stress' });
+      }
     }
   };
 
@@ -277,6 +283,8 @@ const Dashboard = () => {
             sensors={sensors}
             refetchInterval={stressActive ? POLL_MS : false}
             anomalyMarkers={stressActive ? anomalyMarkers : []}
+            liveWindowMinutes={30}
+            stressPhase={stressActive ? stressPhase : undefined}
           />
         </>
       )}

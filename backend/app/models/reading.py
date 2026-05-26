@@ -105,6 +105,17 @@ class DetectResponse(BaseModel):
     anomalies_inserted: int
 
 
+class RetrainRequest(BaseModel):
+    object_id: UUID
+    days: int = Field(default=1, ge=1, le=365)
+    exclude_since: Optional[datetime] = None
+
+
+class RetrainResponse(BaseModel):
+    windows_trained: int
+    model_saved: bool
+
+
 class ServiceHealth(BaseModel):
     status: str
     service: str
