@@ -16,7 +16,10 @@ from sklearn.metrics import classification_report, f1_score
 sys.path.insert(0, os.path.dirname(__file__))
 from models import MLModel
 
-DATA_DIR  = os.path.join(os.path.dirname(__file__), "..", "data")
+DATA_DIR  = os.environ.get(
+    "SYNTHETIC_DATA_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "data"),
+)
 SKAB_DIR  = os.path.join(DATA_DIR, "skab")
 SKAB_CSV  = os.path.join(DATA_DIR, "skab_adapted.csv")
 SYNTH_CSV = os.path.join(DATA_DIR, "synthetic_current_anomalies.csv")

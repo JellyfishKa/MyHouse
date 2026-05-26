@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { Descriptions, Modal, Tag, Typography } from 'antd';
-import type { NotificationLogEntry } from '../utils/notificationLogUtils';
-import { kindColor, kindLabel } from '../utils/notificationLogUtils';
+import { anomalySeverityLabel } from '../utils/anomalyUtils';
+import { kindColor, kindLabel, type NotificationLogEntry } from '../utils/notificationLogUtils';
 
 const { Paragraph, Text } = Typography;
 
@@ -44,7 +44,7 @@ function NotificationDetailModal({ entry, open, onClose }: NotificationDetailMod
         )}
         {entry.severity && (
           <Tag color={SEVERITY_TAG[entry.severity] ?? 'default'}>
-            {entry.severity}
+            {anomalySeverityLabel(entry.severity)}
           </Tag>
         )}
       </div>

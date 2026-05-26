@@ -118,8 +118,8 @@ def main():
     parser.add_argument(
         "--days",
         type=int,
-        default=7,
-        help="Days of historical telemetry to generate (default: 7, max: 45 for ML baseline)",
+        default=45,
+        help="Days of historical telemetry to generate (default: 45, max: 45 for ML baseline)",
     )
     args = parser.parse_args()
     api = args.api.rstrip("/")

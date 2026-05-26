@@ -135,7 +135,10 @@ async def detect_anomalies(request: DetectRequest):
 
 @app.post("/api/v1/retrain", response_model=RetrainResponse)
 async def retrain_model(request: RetrainRequest):
-    df = fetch_readings_by_object(str(request.object_id), request.days)
+    exclude_after = request.exclude_since.isoformat() if request.exclude_since else None
+    df = fetch_readings_by_object(
+        str(request.object_id), request.days, exclude_after=exclude_after,
+    )
 
     if df.empty:
         return RetrainResponse(windows_trained=0, model_saved=False)

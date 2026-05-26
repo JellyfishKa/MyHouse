@@ -1,24 +1,65 @@
-"""Live stress-test step tracker and demo predictive overlays."""
+"""Live stress-test step tracker (PostgreSQL-backed for multi-worker prod)."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.database.models import StressSession
 from app.models.reading import PredictiveInsightItem, PredictiveInsights
 
+# L1 cache — same worker reads after write; DB is source of truth across workers.
 _stress_steps: dict[UUID, int] = {}
 
 
-def set_stress_step(object_id: UUID, step: int) -> None:
+async def set_stress_step(
+    db: AsyncSession,
+    object_id: UUID,
+    step: int,
+    equipment_id: UUID | None = None,
+) -> None:
     _stress_steps[object_id] = step
+    stmt = insert(StressSession).values(
+        object_id=object_id,
+        step=step,
+        equipment_id=equipment_id,
+        updated_at=datetime.now(timezone.utc),
+    ).on_conflict_do_update(
+        index_elements=["object_id"],
+        set_={
+            "step": step,
+            "equipment_id": equipment_id,
+            "updated_at": datetime.now(timezone.utc),
+        },
+    )
+    await db.execute(stmt)
 
 
-def clear_stress(object_id: UUID) -> None:
+async def clear_stress(db: AsyncSession, object_id: UUID) -> None:
     _stress_steps.pop(object_id, None)
+    await db.execute(delete(StressSession).where(StressSession.object_id == object_id))
 
 
-def get_stress_step(object_id: UUID) -> int | None:
-    return _stress_steps.get(object_id)
+async def get_stress_step(db: AsyncSession, object_id: UUID) -> int | None:
+    cached = _stress_steps.get(object_id)
+    if cached is not None:
+        return cached
+
+    row = await db.scalar(
+        select(StressSession.step).where(StressSession.object_id == object_id)
+    )
+    if row is not None:
+        _stress_steps[object_id] = row
+    return row
+
+
+async def get_stress_session(db: AsyncSession, object_id: UUID) -> StressSession | None:
+    return await db.scalar(
+        select(StressSession).where(StressSession.object_id == object_id)
+    )
 
 
 def _item(
@@ -46,7 +87,6 @@ def _item(
 
 def build_stress_predictive_insights(object_id: UUID, step: int, now: datetime) -> PredictiveInsights:
     """Dynamic 2 / 7 / 30-day forecasts synced with live stress-test step."""
-    # Defaults before first predict tick
     spike = _item(
         "spike_risk",
         "Риск резкого изменения",

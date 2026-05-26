@@ -5,15 +5,18 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends gcc \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /app/saved_models
+RUN mkdir -p /app/saved_models /data
 
-COPY requirements.txt .
+COPY ml/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY ml/ .
+COPY data/synthetic_rul.csv /data/synthetic_rul.csv
 
-VOLUME ["/data/ml_results"]
+RUN chmod +x /app/entrypoint.sh
+
+VOLUME ["/data/ml_results", "/app/saved_models"]
 
 EXPOSE 8002
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8002"]
+ENTRYPOINT ["/app/entrypoint.sh"]

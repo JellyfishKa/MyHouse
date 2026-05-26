@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import api from './client';
+import api, { ML_TIMEOUT_MS } from './client';
 
 export interface MonitoringObject {
   id: string;
@@ -241,11 +241,12 @@ export function useHealthScore(objectId?: string, refetchInterval?: number | fal
   });
 }
 
-export function useRul(objectId?: string, refetchInterval?: number | false) {
+export function useRul(objectId?: string, refetchInterval?: number | false, since?: string) {
   return useQuery<RulPrediction>({
-    queryKey: ['rul', objectId],
+    queryKey: ['rul', objectId, since],
     queryFn: async () => {
-      const { data } = await api.get(`/analytics/rul/${objectId!}`);
+      const params = since ? { since } : undefined;
+      const { data } = await api.get(`/analytics/rul/${objectId!}`, { params });
       return data;
     },
     enabled: !!objectId,
@@ -289,6 +290,11 @@ export interface StressTestResponse {
   duration_seconds: number;
 }
 
+export interface StressCancelResponse {
+  status: string;
+  object_id: string;
+}
+
 export function useStressTest() {
   return useMutation<StressTestResponse, Error, StressTestRequest>({
     mutationFn: async (payload) => {
@@ -298,10 +304,19 @@ export function useStressTest() {
   });
 }
 
+export function useCancelStressTest() {
+  return useMutation<StressCancelResponse, Error, { object_id: string }>({
+    mutationFn: async (payload) => {
+      const { data } = await api.post('/demo/stress-test/cancel', payload);
+      return data;
+    },
+  });
+}
+
 export function useTriggerDetection() {
   return useMutation<DetectResponse, Error, DetectRequest>({
     mutationFn: async (payload) => {
-      const { data } = await api.post('/ml/detect', payload);
+      const { data } = await api.post('/ml/detect', payload, { timeout: ML_TIMEOUT_MS });
       return data;
     },
   });
@@ -310,7 +325,7 @@ export function useTriggerDetection() {
 export function useRetrainMl() {
   return useMutation<RetrainResponse, Error, RetrainRequest>({
     mutationFn: async (payload) => {
-      const { data } = await api.post('/ml/retrain', payload);
+      const { data } = await api.post('/ml/retrain', payload, { timeout: ML_TIMEOUT_MS });
       return data;
     },
   });

@@ -16,7 +16,10 @@ import os
 import numpy as np
 import pandas as pd
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+DATA_DIR = os.environ.get(
+    "SYNTHETIC_DATA_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "data"),
+)
 ANOMALY_CSV = os.path.join(DATA_DIR, "synthetic_current_anomalies.csv")
 RUL_CSV     = os.path.join(DATA_DIR, "synthetic_rul.csv")
 

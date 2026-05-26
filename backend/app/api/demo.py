@@ -21,7 +21,13 @@ from app.models.database.models import (
     SensorCategory,
     SeverityLevel,
 )
-from app.models.reading import StressTestRequest, StressTestResponse
+from app.models.reading import (
+    StressCancelRequest,
+    StressCancelResponse,
+    StressStatusResponse,
+    StressTestRequest,
+    StressTestResponse,
+)
 from app.services.stress_state import clear_stress, set_stress_step
 
 router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
@@ -211,6 +217,8 @@ _PATTERN_FACTOR: dict[str, float] = {
 }
 
 _active_stress_workers: set[uuid.UUID] = set()
+_active_stress_objects: set[uuid.UUID] = set()
+_stress_cancel_objects: set[uuid.UUID] = set()
 
 
 def _daily_factor(hour: int) -> float:
@@ -303,7 +311,13 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                 for sid, cat in result.all():
                     sensor_by_cat[cat] = sid
 
-            while datetime.now(timezone.utc) < deadline:
+            if object_id:
+                _active_stress_objects.add(object_id)
+
+            while (
+                datetime.now(timezone.utc) < deadline
+                and object_id not in _stress_cancel_objects
+            ):
                 now = datetime.now(timezone.utc)
                 hour = now.hour
                 base_current = 9.0 + 2.5 * _daily_factor(hour)
@@ -364,7 +378,7 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
                             )
 
                 if object_id:
-                    set_stress_step(object_id, step)
+                    await set_stress_step(db, object_id, step, equipment_id)
 
                 await db.commit()
                 step += 1
@@ -372,7 +386,11 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
     finally:
         _active_stress_workers.discard(equipment_id)
         if object_id:
-            clear_stress(object_id)
+            _active_stress_objects.discard(object_id)
+            _stress_cancel_objects.discard(object_id)
+            async with async_session_local() as db:
+                await clear_stress(db, object_id)
+                await db.commit()
 
 
 @router.post("/stress-test", response_model=StressTestResponse)
@@ -406,10 +424,18 @@ async def run_stress_test(
             await db.refresh(equipment)
 
         equipment_id = equipment.id
+        lock_object_id = payload.object_id
     else:
         item = await db.get(Equipment, equipment_id)
         if not item:
             raise HTTPException(status_code=404, detail="Equipment not found")
+        lock_object_id = item.object_id
+
+    if lock_object_id in _active_stress_objects:
+        raise HTTPException(
+            status_code=409,
+            detail="Stress test already running for this object",
+        )
 
     if equipment_id in _active_stress_workers:
         raise HTTPException(
@@ -425,4 +451,36 @@ async def run_stress_test(
         status="started",
         equipment_id=equipment_id,
         duration_seconds=payload.duration_seconds,
+    )
+
+
+@router.post("/stress-test/cancel", response_model=StressCancelResponse)
+async def cancel_stress_test(
+    payload: StressCancelRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    object_id = payload.object_id
+    if object_id not in _active_stress_objects:
+        await clear_stress(db, object_id)
+        await db.commit()
+        return StressCancelResponse(status="not_running", object_id=object_id)
+
+    _stress_cancel_objects.add(object_id)
+    return StressCancelResponse(status="cancelling", object_id=object_id)
+
+
+@router.get("/stress-status/{object_id}", response_model=StressStatusResponse)
+async def get_stress_status(
+    object_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.stress_state import get_stress_session
+
+    active = object_id in _active_stress_objects
+    session = await get_stress_session(db, object_id)
+    return StressStatusResponse(
+        active=active,
+        object_id=object_id,
+        equipment_id=session.equipment_id if session else None,
+        step=session.step if session else None,
     )

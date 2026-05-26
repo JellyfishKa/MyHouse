@@ -29,7 +29,7 @@ async def upload_telemetry_batch(
         stmt = (
             pg_insert(Reading)
             .values(insert_data)
-            .on_conflict_do_nothing()
+            .on_conflict_do_nothing(index_elements=["time", "sensor_id"])
             .returning(Reading.time)
         )
         result = await db.execute(stmt)

@@ -22,7 +22,6 @@ import type { AppLayoutContextValue } from '../components/MainLayout';
 import SummaryCards from '../components/SummaryCards';
 import { useStressTestContext } from '../context/StressTestContext';
 import {
-  useAnomalies,
   useHealthScore,
   useObjectSensors,
   useRul,
@@ -30,8 +29,15 @@ import {
   useSummary,
   useTriggerDetection,
 } from '../api/hooks';
+import {
+  aggregateTotalAverage,
+  healthColor,
+  invalidateObjectMetrics,
+  rulColor,
+} from '../utils/metricsUtils';
 
 const POLL_MS = 2000;
+const METRICS_POLL_MS = 30_000;
 
 const { Text, Title } = Typography;
 
@@ -39,19 +45,6 @@ const typeLabels: Record<string, string> = {
   datacenter: 'Датацентр',
   workshop: 'Производственный узел',
   building: 'Здание',
-};
-
-const healthColor = (grade?: string) => {
-  if (grade === 'A') return '#2ecc72';
-  if (grade === 'B') return '#f0a500';
-  if (grade === 'C') return '#e67e22';
-  return '#e74c3c';
-};
-
-const rulColor = (status?: string) => {
-  if (status === 'ok') return '#2ecc72';
-  if (status === 'warning') return '#f0a500';
-  return '#e74c3c';
 };
 
 const Dashboard = () => {
@@ -65,6 +58,7 @@ const Dashboard = () => {
     stressStep,
     startStressTest,
     endStressTest,
+    anomalies: stressAnomalies,
   } = useStressTestContext();
   const queryClient = useQueryClient();
   const [messageApi, contextHolder] = message.useMessage();
@@ -75,18 +69,17 @@ const Dashboard = () => {
     ? new Date(stressStartedAt).toISOString()
     : undefined;
 
+  const metricsPoll = stressActive ? POLL_MS : METRICS_POLL_MS;
+
   const { data: sensors = [] } = useObjectSensors(metricsObjectId);
   const { data: summary = [], isLoading: summaryLoading, error: summaryError } =
-    useSummary(metricsObjectId, stressActive ? POLL_MS : false);
+    useSummary(metricsObjectId, metricsPoll);
   const { data: healthScore, isLoading: healthLoading } =
-    useHealthScore(metricsObjectId, stressActive ? POLL_MS : false, healthSince);
+    useHealthScore(metricsObjectId, metricsPoll, healthSince);
   const { data: rul, isLoading: rulLoading } =
-    useRul(metricsObjectId, stressActive ? POLL_MS : false);
-  const { data: anomalies = [] } = useAnomalies(
-    metricsObjectId,
-    undefined,
-    stressActive ? POLL_MS : false,
-  );
+    useRul(metricsObjectId, metricsPoll, healthSince);
+
+  const totalConsumption = useMemo(() => aggregateTotalAverage(summary), [summary]);
 
   const detectMutation = useTriggerDetection();
   const stressMutation = useStressTest();
@@ -97,17 +90,15 @@ const Dashboard = () => {
   }, [selectedObject?.meta_data]);
 
   const anomalyMarkers = useMemo(() => {
-    const list = stressActive && stressStartedAt
-      ? anomalies.filter((a) => new Date(a.time).getTime() >= stressStartedAt - 5000)
-      : anomalies;
-    return list;
-  }, [anomalies, stressActive, stressStartedAt]);
+    if (!stressActive || !stressStartedAt) return [];
+    return stressAnomalies.filter((a) => new Date(a.time).getTime() >= stressStartedAt - 5000);
+  }, [stressAnomalies, stressActive, stressStartedAt]);
 
   const handleDetect = async () => {
     if (!selectedObjectId) return;
     try {
-      const result = await detectMutation.mutateAsync({ object_id: selectedObjectId, days: 1 });
-      await queryClient.invalidateQueries({ queryKey: ['anomalies', selectedObjectId] });
+      const result = await detectMutation.mutateAsync({ object_id: selectedObjectId, days: 30 });
+      await invalidateObjectMetrics(queryClient, selectedObjectId);
       messageApi.success(`ML завершил анализ: найдено ${result.anomalies_found}, записано ${result.anomalies_inserted}`);
     } catch (error) {
       messageApi.error(`Не удалось запустить ML-анализ: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
@@ -121,23 +112,6 @@ const Dashboard = () => {
       void Notification.requestPermission();
     }
     try {
-      messageApi.loading({ content: 'ML: обучение на исторических данных (7 дней)...', key: 'stress' });
-      try {
-        const mlResult = await detectMutation.mutateAsync({ object_id: selectedObjectId, days: 7 });
-        await queryClient.invalidateQueries({ queryKey: ['anomalies', selectedObjectId] });
-        messageApi.success({
-          content: `ML готов: найдено ${mlResult.anomalies_found}, базовая модель обновлена`,
-          key: 'stress',
-          duration: 3,
-        });
-      } catch {
-        messageApi.warning({
-          content: 'ML недоступен — стресс-тест запустится по демо-сценарию',
-          key: 'stress',
-          duration: 3,
-        });
-      }
-
       const result = await stressMutation.mutateAsync({
         object_id: selectedObjectId,
         duration_seconds: 180,
@@ -147,7 +121,7 @@ const Dashboard = () => {
         objectId: selectedObjectId,
         durationSeconds: result.duration_seconds,
       });
-      messageApi.warning('Стресс-тест запущен на 3 минуты — следите за уведомлениями');
+      messageApi.warning('Стресс-тест · 3 мин = 30 сут — следите за уведомлениями и прогнозом');
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Неизвестная ошибка';
       if (msg.includes('409') || msg.toLowerCase().includes('already running')) {
@@ -266,9 +240,9 @@ const Dashboard = () => {
               <Card className="surface-card stat-card" style={{ height: '100%' }}>
                 {summaryLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
                   <Statistic
-                    title="Потребл."
-                    value={summary[0]?.average != null ? summary[0].average.toFixed(1) : '—'}
-                    suffix={summary[0]?.unit ?? 'кВт'}
+                    title="Потребл. Σ"
+                    value={totalConsumption.value != null ? totalConsumption.value.toFixed(1) : '—'}
+                    suffix={totalConsumption.unit}
                     valueStyle={{ color: '#2ecc72', fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
                   />
                 )}
@@ -278,11 +252,16 @@ const Dashboard = () => {
               <Card className="surface-card stat-card" style={{ height: '100%' }}>
                 {rulLoading ? <Skeleton active paragraph={{ rows: 1 }} /> : (
                   <Statistic
-                    title="RUL"
+                    title={stressActive ? 'RUL (сессия)' : 'RUL'}
                     value={rul ? `${rul.rul_days}` : '—'}
                     suffix={rul ? ' дн.' : ''}
                     valueStyle={{ color: rulColor(rul?.status), fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
                   />
+                )}
+                {rul && (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {rul.confidence === 'high' ? 'уверенность высокая' : rul.confidence === 'medium' ? 'уверенность средняя' : 'эвристика'}
+                  </Text>
                 )}
               </Card>
             </Col>

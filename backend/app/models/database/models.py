@@ -270,6 +270,21 @@ class Alert(Base):
     equipment: Mapped["Equipment"] = relationship("Equipment", back_populates="alerts")
 
 
+class StressSession(Base):
+    __tablename__ = "stress_sessions"
+
+    object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("objects.id", ondelete="CASCADE"), primary_key=True
+    )
+    step: Mapped[int] = mapped_column(default=0, server_default="0")
+    equipment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("equipment.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 EQUIPMENT_READING_HYPERTABLE_SQL = (
     "SELECT create_hypertable('equipment_readings', by_range('time'), "
     "if_not_exists => TRUE);"

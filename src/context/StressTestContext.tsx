@@ -12,9 +12,10 @@ import { message } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useAnomalies,
+  useCancelStressTest,
   useEquipmentAlerts,
   useRetrainMl,
-  useTriggerDetection,
+  type AnomalyRecord,
 } from '../api/hooks';
 import StressTimeline, {
   computeStressPhase,
@@ -40,6 +41,7 @@ export interface StressTestContextValue {
   stressPhase?: StressPhaseInfo;
   stressStep?: number;
   tick: number;
+  anomalies: AnomalyRecord[];
   startStressTest: (params: {
     equipmentId: string;
     objectId: string;
@@ -68,8 +70,8 @@ interface StressTestProviderProps {
 export function StressTestProvider({ objectId, children }: StressTestProviderProps) {
   const queryClient = useQueryClient();
   const { clearLog, entries } = useNotificationLog();
-  const detectMutation = useTriggerDetection();
   const retrainMutation = useRetrainMl();
+  const cancelStressMutation = useCancelStressTest();
   const endTimerRef = useRef<number | undefined>(undefined);
   const stressObjectIdRef = useRef<string | undefined>(undefined);
   const retrainDoneRef = useRef(new Set<number>());
@@ -156,6 +158,12 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     const endedStartedAt = startedAtRef.current;
     const pendingRetrain = retrainChainRef.current;
 
+    if (endedObjectId) {
+      void cancelStressMutation.mutateAsync({ object_id: endedObjectId }).catch(() => {
+        /* backend offline — local reset still proceeds */
+      });
+    }
+
     if (endTimerRef.current) {
       window.clearTimeout(endTimerRef.current);
       endTimerRef.current = undefined;
@@ -195,7 +203,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
         void queryClient.invalidateQueries({ queryKey: ['telemetry'] });
       });
     }
-  }, [objectId, queryClient, retrainMutation]);
+  }, [objectId, queryClient, retrainMutation, cancelStressMutation]);
 
   const startStressTest = useCallback(
     ({ equipmentId: eqId, objectId: objId, durationSeconds }: {
@@ -236,30 +244,15 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     for (const s of RETRAIN_STEPS) {
       if (step >= s && !retrainDoneRef.current.has(s)) {
         retrainDoneRef.current.add(s);
-        enqueueRetrain(1, s);
+        enqueueRetrain(30, s);
       }
     }
   }, [active, startedAt, tick, enqueueRetrain]);
-
-  const handleAutoMl = useCallback(async () => {
-    const targetId = stressObjectId ?? objectId;
-    if (!targetId) return;
-    try {
-      const result = await detectMutation.mutateAsync({ object_id: targetId, days: 3 });
-      await queryClient.invalidateQueries({ queryKey: ['anomalies', targetId] });
-      message.info(
-        `ML-анализ (авто): найдено ${result.anomalies_found}, записано ${result.anomalies_inserted}`,
-      );
-    } catch {
-      message.warning('Авто ML-анализ недоступен — продолжаем сценарий стресс-теста');
-    }
-  }, [stressObjectId, objectId, detectMutation, queryClient]);
 
   useStressNotifications({
     active,
     anomalies,
     alerts,
-    onMlTrigger: handleAutoMl,
     stressStartedAt: startedAt,
   });
 
@@ -273,10 +266,11 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
       stressPhase,
       stressStep,
       tick,
+      anomalies,
       startStressTest,
       endStressTest,
     }),
-    [active, equipmentId, startedAt, endsAt, stressObjectId, objectId, stressPhase, stressStep, tick, startStressTest, endStressTest],
+    [active, equipmentId, startedAt, endsAt, stressObjectId, objectId, stressPhase, stressStep, tick, anomalies, startStressTest, endStressTest],
   );
 
   return (

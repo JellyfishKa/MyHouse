@@ -196,8 +196,7 @@ function resolveSensorLabel(anomaly: AnomalyMarker, sensors: ObjectSensor[]): st
   const match = sensors.find(
     (s) =>
       s.category === anomaly.category
-      || s.label === anomaly.sensor_label
-      || s.id === anomaly.category,
+      || s.label === anomaly.sensor_label,
   );
   return match?.label ?? anomaly.sensor_label ?? sensors[0]?.label;
 }

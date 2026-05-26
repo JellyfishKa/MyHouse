@@ -1,39 +1,20 @@
-import asyncio
-import json
 import urllib.error
-import urllib.request
 
 from fastapi import APIRouter, Body, HTTPException
 
-from app.core.config import settings
 from app.models.reading import (DetectRequest, DetectResponse,
                                 EquipmentHealthML, PredictionItem, RetrainRequest,
                                 RetrainResponse, RulML, ServiceHealth)
+from app.services.ml_client import ml_request
 
 router = APIRouter(prefix="/api/v1/ml", tags=["ML"])
 
 
-def _request_json(
-    method: str, path: str, payload: dict | None = None, timeout: int = 10,
-) -> dict:
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(
-        f"{settings.ML_SERVICE_URL}{path}",
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method=method,
-    )
-
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        body = response.read().decode("utf-8")
-        return json.loads(body) if body else {}
-
-
 async def _safe_request(
     method: str, path: str, payload: dict | None = None, timeout: int = 10,
-) -> dict:
+) -> dict | list:
     try:
-        return await asyncio.to_thread(_request_json, method, path, payload, timeout)
+        return await ml_request(method, path, payload, timeout)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise HTTPException(status_code=exc.code, detail=detail) from exc

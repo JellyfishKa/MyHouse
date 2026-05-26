@@ -15,7 +15,10 @@ from sklearn.metrics import mean_absolute_error, r2_score
 sys.path.insert(0, os.path.dirname(__file__))
 from rul_model import RULModel
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+DATA_DIR = os.environ.get(
+    "SYNTHETIC_DATA_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "data"),
+)
 RUL_CSV  = os.path.join(DATA_DIR, "synthetic_rul.csv")
 
 HISTORY_LEN = 7   # number of past windows for trend_slope

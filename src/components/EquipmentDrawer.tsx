@@ -21,6 +21,7 @@ import {
 import ConsumptionChart from './ConsumptionChart';
 import { useStressTestContextOptional } from '../context/StressTestContext';
 import { useHealthScore, useRul, useAnomalies, type MonitoringObject, type ObjectSensor } from '../api/hooks';
+import { confidenceLabel } from '../utils/metricsUtils';
 import { EQUIPMENT_PASSPORTS } from '../data/equipment-passports';
 
 const POLL_MS = 2000;
@@ -107,7 +108,7 @@ const EquipmentDrawer = ({ open, category, sensors, objectId, objectItem, onClos
     stressActiveForObject ? POLL_MS : false,
     healthSince,
   );
-  const { data: rul } = useRul(objectId, stressActiveForObject ? POLL_MS : false);
+  const { data: rul } = useRul(objectId, stressActiveForObject ? POLL_MS : false, healthSince);
 
   const passport = EQUIPMENT_PASSPORTS[category];
 
@@ -182,7 +183,7 @@ const EquipmentDrawer = ({ open, category, sensors, objectId, objectItem, onClos
                     {rul.status === 'ok' ? 'В норме' : rul.status === 'warning' ? 'Предупреждение' : 'Критично'}
                   </Tag>
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    Уверенность: низкая (эвристика)
+                    Уверенность: {confidenceLabel(rul?.confidence)}
                   </Text>
                 </Space>
               )}
@@ -323,9 +324,10 @@ const EquipmentDrawer = ({ open, category, sensors, objectId, objectItem, onClos
           objectItem={objectItem}
           refetchInterval={stressActiveForObject ? POLL_MS : false}
           anomalyMarkers={stressActiveForObject ? anomalyMarkers : []}
-          liveWindowMinutes={30}
+          liveWindowMinutes={stressActiveForObject ? 3 : 30}
           stressPhase={stressActiveForObject ? stress?.stressPhase : undefined}
           stressStartedAt={stressStartedAt}
+          stressStep={stressActiveForObject ? stress?.stressStep : undefined}
         />
       </Space>
     </Drawer>

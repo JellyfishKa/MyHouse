@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
@@ -97,22 +97,31 @@ async def ingest_readings(
     if not payload.readings:
         raise HTTPException(status_code=400, detail="Empty batch")
 
+    item = await db.get(Equipment, equipment_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Equipment not found")
+
     rows = [
-        EquipmentReading(
-            time=r.time,
-            equipment_id=equipment_id,
-            current_a=r.current_a,
-            voltage_v=r.voltage_v,
-            power_kw=r.power_kw,
-        )
+        {
+            "time": r.time,
+            "equipment_id": equipment_id,
+            "current_a": r.current_a,
+            "voltage_v": r.voltage_v,
+            "power_kw": r.power_kw,
+        }
         for r in payload.readings
     ]
-    db.add_all(rows)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail="Reading ingestion failed")
+    ins = insert(EquipmentReading)
+    stmt = ins.values(rows).on_conflict_do_update(
+        index_elements=["time", "equipment_id"],
+        set_={
+            "current_a": ins.excluded.current_a,
+            "voltage_v": ins.excluded.voltage_v,
+            "power_kw": ins.excluded.power_kw,
+        },
+    )
+    await db.execute(stmt)
+    await db.commit()
     return {"inserted": len(rows)}
 
 

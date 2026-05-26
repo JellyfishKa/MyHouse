@@ -257,3 +257,19 @@ class StressTestResponse(BaseModel):
     status: str
     equipment_id: UUID
     duration_seconds: int
+
+
+class StressCancelRequest(BaseModel):
+    object_id: UUID
+
+
+class StressCancelResponse(BaseModel):
+    status: str
+    object_id: UUID
+
+
+class StressStatusResponse(BaseModel):
+    active: bool
+    object_id: UUID
+    equipment_id: UUID | None = None
+    step: int | None = None

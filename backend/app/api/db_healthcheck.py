@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.db import get_db
 
 router = APIRouter()
@@ -18,7 +19,7 @@ async def check_health(db: AsyncSession = Depends(get_db)):
         return {
             "status": "ok",
             "database": "connected",
-            "environment": "development"
+            "environment": settings.NODE_ENV,
         }
     except Exception as e:
         # Логируем ошибку здесь, если есть логгер

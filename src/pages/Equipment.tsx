@@ -12,8 +12,10 @@ import type { AppLayoutContextValue } from '../components/MainLayout';
 import { useStressTestContextOptional } from '../context/StressTestContext';
 import EquipmentDrawer from '../components/EquipmentDrawer';
 import { useHealthScore, useObjectSensors, useRul, useSummary, type ObjectSensor } from '../api/hooks';
+import { averageByCategory, healthColor, rulColor } from '../utils/metricsUtils';
 
 const POLL_MS = 2000;
+const METRICS_POLL_MS = 30_000;
 
 const { Text, Title } = Typography;
 const { useBreakpoint } = Grid;
@@ -51,22 +53,23 @@ const Equipment = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [drawerCategory, setDrawerCategory] = useState<string | null>(null);
 
+  const metricsPoll = stressActive ? POLL_MS : METRICS_POLL_MS;
+
   const { data: sensors = [], isLoading: sensorsLoading } = useObjectSensors(metricsObjectId);
-  const { data: summary = [] } = useSummary(metricsObjectId, stressActive ? POLL_MS : false);
-  const { data: healthScore } = useHealthScore(
+  const { data: summary = [] } = useSummary(metricsObjectId, metricsPoll);
+  const { data: healthScore, isLoading: healthLoading } = useHealthScore(
     metricsObjectId,
-    stressActive ? POLL_MS : false,
+    metricsPoll,
     healthSince,
   );
-  const { data: rul } = useRul(metricsObjectId, stressActive ? POLL_MS : false);
+  const { data: rul, isLoading: rulLoading } = useRul(metricsObjectId, metricsPoll, healthSince);
 
   const summaryByCategory = useMemo(() => {
     const map = new Map<string, { avg: number; unit: string }>();
-    summary.forEach((s) => {
-      if (!map.has(s.category)) {
-        map.set(s.category, { avg: s.average, unit: s.unit });
-      }
-    });
+    for (const cat of Object.keys(CATEGORY_CONFIG)) {
+      const row = averageByCategory(summary, cat);
+      if (row) map.set(cat, row);
+    }
     return map;
   }, [summary]);
 
@@ -81,7 +84,9 @@ const Equipment = () => {
     return Object.keys(CATEGORY_CONFIG).map((cat) => {
       const catSensors = grouped[cat] ?? [];
       const catSummary = summaryByCategory.get(cat);
-      const hasData = catSensors.some((s) => isRecent(s.last_reading_at));
+      const hasData = stressActive
+        ? catSummary != null || catSensors.length > 0
+        : catSensors.some((s) => isRecent(s.last_reading_at));
       return {
         key: cat,
         category: cat,
@@ -173,29 +178,24 @@ const Equipment = () => {
     },
   ];
 
-  const healthColor =
-    healthScore?.grade === 'A'
-      ? '#15803d'
-      : healthScore?.grade === 'B'
-        ? '#0f766e'
-        : healthScore?.grade === 'C'
-          ? '#d97706'
-          : '#d4380d';
-
-  const rulColor =
-    rul?.status === 'ok' ? '#15803d' : rul?.status === 'warning' ? '#d97706' : '#d4380d';
+  const healthTint = healthColor(healthScore?.grade);
+  const rulTint = rulColor(rul?.status);
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Row gutter={[10, 10]}>
         <Col xs={24} sm={8}>
           <Card className="surface-card stat-card" style={{ height: '100%' }}>
+            {healthLoading ? (
+              <Statistic title={stressActive ? 'Health (сессия)' : 'Health Score'} value="—" />
+            ) : (
             <Statistic
               title={stressActive ? 'Health (сессия)' : 'Health Score'}
               value={healthScore ? `${healthScore.score}` : '—'}
               suffix={healthScore ? ` ${healthScore.grade}` : ''}
-              valueStyle={{ color: healthScore ? healthColor : undefined, fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
+              valueStyle={{ color: healthScore ? healthTint : undefined, fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
             />
+            )}
             {stressActive && healthScore && (
               <Text type="secondary" style={{ fontSize: 11 }}>
                 C:{healthScore.critical} H:{healthScore.high} M:{healthScore.medium} L:{healthScore.low}
@@ -205,12 +205,16 @@ const Equipment = () => {
         </Col>
         <Col xs={24} sm={8}>
           <Card className="surface-card stat-card" style={{ height: '100%' }}>
+            {rulLoading ? (
+              <Statistic title={stressActive ? 'RUL (сессия)' : 'RUL'} value="—" />
+            ) : (
             <Statistic
-              title="RUL"
+              title={stressActive ? 'RUL (сессия)' : 'RUL'}
               value={rul ? `${rul.rul_days}` : '—'}
               suffix={rul ? ' дн.' : ''}
-              valueStyle={{ color: rul ? rulColor : undefined, fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
+              valueStyle={{ color: rul ? rulTint : undefined, fontSize: 'clamp(16px, 3.5vw, 26px)', fontWeight: 700 }}
             />
+            )}
           </Card>
         </Col>
         <Col xs={24} sm={8}>
