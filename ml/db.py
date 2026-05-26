@@ -134,13 +134,31 @@ def fetch_equipment_ids_by_object(object_id: str) -> list[str]:
 
 
 def insert_anomalies(anomalies: list[dict]) -> int:
-    """Insert anomaly records into the anomalies table."""
+    """Insert anomaly records, skipping near-duplicates for the same sensor."""
     if not anomalies:
         return 0
 
     conn = get_connection()
     try:
+        to_insert = []
         with conn.cursor() as cur:
+            for a in anomalies:
+                cur.execute(
+                    """
+                    SELECT 1 FROM anomalies
+                    WHERE sensor_id = %s
+                      AND detected_at BETWEEN %s - INTERVAL '2 minutes'
+                                          AND %s + INTERVAL '2 minutes'
+                    LIMIT 1
+                    """,
+                    (a["sensor_id"], a["detected_at"], a["detected_at"]),
+                )
+                if cur.fetchone() is None:
+                    to_insert.append(a)
+
+            if not to_insert:
+                return 0
+
             execute_values(
                 cur,
                 """
@@ -155,10 +173,10 @@ def insert_anomalies(anomalies: list[dict]) -> int:
                         a["value"],
                         a.get("expected_value"),
                     )
-                    for a in anomalies
+                    for a in to_insert
                 ],
             )
         conn.commit()
-        return len(anomalies)
+        return len(to_insert)
     finally:
         conn.close()

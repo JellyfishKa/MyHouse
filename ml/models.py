@@ -42,9 +42,15 @@ class MLModel:
             stats = {"start_time": data["time"].iloc[i]}
 
             for col in signal_columns:
-                stats[f"{col}_rms"] = np.mean(window[col] ** 2)
-                stats[f"{col}_std"] = window[col].std()
-                stats[f"{col}_max"] = window[col].abs().max()
+                col_vals = window[col].dropna()
+                if col_vals.empty:
+                    stats[f"{col}_rms"] = 0.0
+                    stats[f"{col}_std"] = 0.0
+                    stats[f"{col}_max"] = 0.0
+                else:
+                    stats[f"{col}_rms"] = float(np.sqrt(np.mean(col_vals ** 2)))
+                    stats[f"{col}_std"] = float(col_vals.std())
+                    stats[f"{col}_max"] = float(col_vals.abs().max())
 
             features.append(stats)
 
@@ -59,6 +65,10 @@ class MLModel:
         if save:
             self.save()
         return X
+
+    def predict(self, data: pd.DataFrame):
+        X = self._data_preparation(data)
+        return X, self.model.predict(X[self.feature_cols])
 
     def fit_predict(self, data: pd.DataFrame):
         X = self._data_preparation(data)

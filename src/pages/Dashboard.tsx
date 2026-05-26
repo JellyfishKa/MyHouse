@@ -62,6 +62,7 @@ const Dashboard = () => {
     objectId: stressObjectId,
     stressPhase,
     startStressTest,
+    endStressTest,
   } = useStressTestContext();
   const queryClient = useQueryClient();
   const [messageApi, contextHolder] = message.useMessage();
@@ -212,6 +213,11 @@ const Dashboard = () => {
             >
               {stressActive ? 'Активен...' : 'Стресс-тест'}
             </Button>
+            {stressActive && (
+              <Button size="large" onClick={endStressTest}>
+                Остановить
+              </Button>
+            )}
           </Space>
         </div>
       </Card>
@@ -285,6 +291,7 @@ const Dashboard = () => {
             anomalyMarkers={stressActive ? anomalyMarkers : []}
             liveWindowMinutes={30}
             stressPhase={stressActive ? stressPhase : undefined}
+            stressStartedAt={stressActive ? stressStartedAt : undefined}
           />
         </>
       )}

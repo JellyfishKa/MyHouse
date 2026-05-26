@@ -3,7 +3,7 @@ import json
 import urllib.error
 import urllib.request
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 
 from app.core.config import settings
 from app.models.reading import (DetectRequest, DetectResponse,
@@ -13,7 +13,9 @@ from app.models.reading import (DetectRequest, DetectResponse,
 router = APIRouter(prefix="/api/v1/ml", tags=["ML"])
 
 
-def _request_json(method: str, path: str, payload: dict | None = None) -> dict:
+def _request_json(
+    method: str, path: str, payload: dict | None = None, timeout: int = 10,
+) -> dict:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(
         f"{settings.ML_SERVICE_URL}{path}",
@@ -22,14 +24,16 @@ def _request_json(method: str, path: str, payload: dict | None = None) -> dict:
         method=method,
     )
 
-    with urllib.request.urlopen(req, timeout=10) as response:
+    with urllib.request.urlopen(req, timeout=timeout) as response:
         body = response.read().decode("utf-8")
         return json.loads(body) if body else {}
 
 
-async def _safe_request(method: str, path: str, payload: dict | None = None) -> dict:
+async def _safe_request(
+    method: str, path: str, payload: dict | None = None, timeout: int = 10,
+) -> dict:
     try:
-        return await asyncio.to_thread(_request_json, method, path, payload)
+        return await asyncio.to_thread(_request_json, method, path, payload, timeout)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise HTTPException(status_code=exc.code, detail=detail) from exc
@@ -61,6 +65,7 @@ async def run_detection(payload: DetectRequest):
         "POST",
         "/api/v1/detect",
         payload.model_dump(mode="json", exclude_none=True),
+        timeout=120,
     )
     return DetectResponse(**result)
 
@@ -71,6 +76,7 @@ async def retrain_model(payload: RetrainRequest):
         "POST",
         "/api/v1/retrain",
         payload.model_dump(mode="json", exclude_none=True),
+        timeout=120,
     )
     return RetrainResponse(**result)
 
@@ -93,6 +99,6 @@ async def get_predictions(object_id: str | None = None, limit: int = 20):
 
 
 @router.post("/predict", response_model=RulML)
-async def predict_rul(equipment_id: str):
+async def predict_rul(equipment_id: str = Body(..., embed=True)):
     result = await _safe_request("POST", "/ml/predict", {"equipment_id": equipment_id})
     return RulML(**result)

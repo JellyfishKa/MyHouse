@@ -160,7 +160,7 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
     _active_stress_workers.add(equipment_id)
     step = 0
     deadline = datetime.now(timezone.utc) + timedelta(seconds=duration_sec)
-    fired: set[tuple[int, str, str]] = set()
+    fired: set[tuple[int, str, str, str]] = set()
     rng = random.Random(42)
 
     try:

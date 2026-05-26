@@ -97,7 +97,10 @@ async def detect_anomalies(request: DetectRequest):
 
         model = MLModel(window_size=min(1000, max(10, len(ml_input) // 3)))
         try:
-            features, predictions = model.fit_predict(ml_input)
+            if model.feature_cols:
+                features, predictions = model.predict(ml_input)
+            else:
+                features, predictions = model.fit_predict(ml_input)
         except Exception:
             continue
 
@@ -151,6 +154,11 @@ async def retrain_model(request: RetrainRequest):
         index="time", columns="sensor_category", values="value", aggfunc="mean"
     ).reset_index()
 
+    numeric_cols = [c for c in pivot.columns if c != "time"]
+    pivot[numeric_cols] = pivot[numeric_cols].apply(
+        lambda col: col.interpolate(limit_direction="both").ffill().bfill()
+    )
+
     if len(pivot) < 10:
         return RetrainResponse(windows_trained=0, model_saved=False)
 
@@ -159,7 +167,10 @@ async def retrain_model(request: RetrainRequest):
     try:
         X = model.fit(pivot, save=True)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Retrain failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Retrain failed: {exc}") from exc
+
+    if len(X) < 2:
+        return RetrainResponse(windows_trained=len(X), model_saved=False)
 
     return RetrainResponse(windows_trained=len(X), model_saved=True)
 
@@ -184,14 +195,17 @@ async def equipment_health(equipment_id: str):
             anomaly_rate=0.0, windows_checked=0
         )
 
-    ml_input = df[["current_a"]].copy()
-    ml_input.insert(0, "time", pd.date_range("2024-01-01", periods=len(ml_input), freq="s", tz="UTC"))
+    ml_input = df[["time", "current_a"]].copy()
+    ml_input = ml_input.rename(columns={"current_a": "value"})
 
     window_size = min(100, max(10, len(ml_input) // 5))
     model = MLModel(window_size=window_size)
 
     try:
-        features, preds = model.fit_predict(ml_input)
+        if model.feature_cols:
+            features, preds = model.predict(ml_input)
+        else:
+            features, preds = model.fit_predict(ml_input)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Model error: {exc}")
 

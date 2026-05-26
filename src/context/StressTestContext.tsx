@@ -24,7 +24,7 @@ import StressTimeline, {
 import { useStressNotifications } from '../hooks/useStressNotifications';
 
 const POLL_MS = 2000;
-const STRESS_UI_BUFFER_MS = 60_000;
+const STRESS_END_GRACE_MS = 5_000;
 const RETRAIN_STEPS = [15, 30, 60, 90];
 
 export type { StressPhaseInfo };
@@ -69,6 +69,9 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   const endTimerRef = useRef<number | undefined>(undefined);
   const stressObjectIdRef = useRef<string | undefined>(undefined);
   const retrainDoneRef = useRef(new Set<number>());
+  const retrainChainRef = useRef(Promise.resolve());
+  const startedAtRef = useRef<number | undefined>(undefined);
+  const durationSecRef = useRef(300);
 
   const [active, setActive] = useState(false);
   const [equipmentId, setEquipmentId] = useState<string>();
@@ -101,12 +104,12 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
   }, [active]);
 
   const runRetrain = useCallback(
-    async (days: number, showToast = true) => {
+    async (days: number, _step?: number, showToast = true) => {
       const targetId = stressObjectIdRef.current ?? objectId;
       if (!targetId) return;
       try {
-        const excludeSince = startedAt
-          ? new Date(startedAt).toISOString()
+        const excludeSince = startedAtRef.current
+          ? new Date(startedAtRef.current).toISOString()
           : undefined;
         const result = await retrainMutation.mutateAsync({
           object_id: targetId,
@@ -115,6 +118,8 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
         });
         if (showToast && result.model_saved) {
           message.info(`ML дообучен на новых данных (${result.windows_trained} окон)`);
+        } else if (showToast && !result.model_saved) {
+          message.warning('ML retrain: недостаточно данных для сохранения модели');
         }
       } catch {
         if (showToast) {
@@ -122,17 +127,28 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
         }
       }
     },
-    [objectId, retrainMutation, startedAt],
+    [objectId, retrainMutation],
+  );
+
+  const enqueueRetrain = useCallback(
+    (days: number, step: number) => {
+      retrainChainRef.current = retrainChainRef.current.then(() => runRetrain(days, step));
+    },
+    [runRetrain],
   );
 
   const endStressTest = useCallback(() => {
     const endedObjectId = stressObjectIdRef.current ?? objectId;
+    const endedStartedAt = startedAtRef.current;
+    const pendingRetrain = retrainChainRef.current;
+
     if (endTimerRef.current) {
       window.clearTimeout(endTimerRef.current);
       endTimerRef.current = undefined;
     }
     stressObjectIdRef.current = undefined;
     retrainDoneRef.current.clear();
+    startedAtRef.current = undefined;
     setActive(false);
     setEquipmentId(undefined);
     setStartedAt(undefined);
@@ -141,19 +157,29 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     setTick(0);
 
     if (endedObjectId) {
-      void (async () => {
+      const excludeSince = endedStartedAt
+        ? new Date(endedStartedAt).toISOString()
+        : undefined;
+      void pendingRetrain.then(async () => {
         try {
-          await retrainMutation.mutateAsync({
+          const result = await retrainMutation.mutateAsync({
             object_id: endedObjectId,
             days: 3,
+            exclude_since: excludeSince,
           });
+          if (!result.model_saved) {
+            message.warning('Финальный ML retrain: модель не сохранена (мало данных)');
+          }
         } catch {
           /* ML offline — ignore */
         }
         void queryClient.invalidateQueries({ queryKey: ['health-score', endedObjectId] });
         void queryClient.invalidateQueries({ queryKey: ['anomalies', endedObjectId] });
         void queryClient.invalidateQueries({ queryKey: ['predictive-insights', endedObjectId] });
-      })();
+        void queryClient.invalidateQueries({ queryKey: ['summary', endedObjectId] });
+        void queryClient.invalidateQueries({ queryKey: ['rul', endedObjectId] });
+        void queryClient.invalidateQueries({ queryKey: ['telemetry'] });
+      });
     }
   }, [objectId, queryClient, retrainMutation]);
 
@@ -164,10 +190,13 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
       durationSeconds: number;
     }) => {
       const now = Date.now();
-      const end = now + durationSeconds * 1000 + STRESS_UI_BUFFER_MS;
+      durationSecRef.current = durationSeconds;
+      const end = now + durationSeconds * 1000;
       if (endTimerRef.current) window.clearTimeout(endTimerRef.current);
       stressObjectIdRef.current = objId;
       retrainDoneRef.current.clear();
+      retrainChainRef.current = Promise.resolve();
+      startedAtRef.current = now;
       setEquipmentId(eqId);
       setStressObjectId(objId);
       setStartedAt(now);
@@ -177,7 +206,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
       endTimerRef.current = window.setTimeout(() => {
         endStressTest();
         message.info('Стресс-тест завершён');
-      }, end - now);
+      }, end - now + STRESS_END_GRACE_MS);
     },
     [endStressTest],
   );
@@ -192,10 +221,10 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     for (const s of RETRAIN_STEPS) {
       if (step >= s && !retrainDoneRef.current.has(s)) {
         retrainDoneRef.current.add(s);
-        void runRetrain(1);
+        enqueueRetrain(1, s);
       }
     }
-  }, [active, startedAt, tick, runRetrain]);
+  }, [active, startedAt, tick, enqueueRetrain]);
 
   const handleAutoMl = useCallback(async () => {
     const targetId = stressObjectId ?? objectId;

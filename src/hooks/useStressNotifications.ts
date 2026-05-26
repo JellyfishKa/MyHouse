@@ -40,6 +40,7 @@ export function useStressNotifications({
   const seenAnomalyIds = useRef(new Set<string>());
   const seenAlertIds = useRef(new Set<string>());
   const mlTriggered = useRef(false);
+  const onMlTriggerRef = useRef(onMlTrigger);
   const sessionKey = useRef<number | undefined>(undefined);
   const anomalySeedDone = useRef(false);
   const alertSeedDone = useRef(false);
@@ -68,17 +69,21 @@ export function useStressNotifications({
   }, [active, stressStartedAt]);
 
   useEffect(() => {
-    if (!active || !onMlTrigger) return undefined;
+    onMlTriggerRef.current = onMlTrigger;
+  }, [onMlTrigger]);
+
+  useEffect(() => {
+    if (!active) return undefined;
 
     const timer = window.setTimeout(() => {
       if (!mlTriggered.current) {
         mlTriggered.current = true;
-        onMlTrigger();
+        onMlTriggerRef.current?.();
       }
     }, 120_000);
 
     return () => window.clearTimeout(timer);
-  }, [active, stressStartedAt, onMlTrigger]);
+  }, [active, stressStartedAt]);
 
   useEffect(() => {
     if (!active) return;

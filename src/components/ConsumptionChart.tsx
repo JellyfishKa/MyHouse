@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Card, Checkbox, Empty, Grid, Select, Segmented, Spin, Typography } from 'antd';
 import { useQueries } from '@tanstack/react-query';
 import {
@@ -40,6 +40,7 @@ interface ConsumptionChartProps {
   anomalyMarkers?: AnomalyMarker[];
   liveWindowMinutes?: number;
   stressPhase?: StressPhaseInfo;
+  stressStartedAt?: number;
 }
 
 type ChartRow = Record<string, number | string | null>;
@@ -124,13 +125,14 @@ function resolveSensorLabel(anomaly: AnomalyMarker, sensors: ObjectSensor[]): st
 }
 
 function snapAnomalyToChart(
-  anomalyTime: string,
+  anomaly: AnomalyMarker,
   sensorLabel: string | undefined,
   chartData: ChartRow[],
-): { chartTime: string; y?: number } {
-  if (!chartData.length || !sensorLabel) return { chartTime: anomalyTime };
+  percentMode: boolean,
+): { chartTime: string; y: number } | null {
+  if (!sensorLabel) return null;
 
-  const target = new Date(anomalyTime).getTime();
+  const target = new Date(anomaly.time).getTime();
   let bestRow: ChartRow | undefined;
   let bestDiff = Infinity;
 
@@ -142,13 +144,26 @@ function snapAnomalyToChart(
     }
   });
 
-  if (!bestRow || bestDiff > SNAP_MS) return { chartTime: anomalyTime };
+  const chartTime = bestRow && bestDiff <= SNAP_MS
+    ? String(bestRow.time)
+    : anomaly.time;
 
-  const y = bestRow[sensorLabel];
-  return {
-    chartTime: String(bestRow.time),
-    y: typeof y === 'number' ? y : undefined,
-  };
+  if (bestRow && bestDiff <= SNAP_MS) {
+    const snapped = bestRow[sensorLabel];
+    if (typeof snapped === 'number') {
+      return { chartTime, y: snapped };
+    }
+  }
+
+  if (percentMode && anomaly.expected != null && anomaly.expected > 0) {
+    return { chartTime, y: Math.round((anomaly.value / anomaly.expected) * 1000) / 10 };
+  }
+
+  if (!percentMode) {
+    return { chartTime, y: anomaly.value };
+  }
+
+  return null;
 }
 
 const ConsumptionChart = ({
@@ -158,6 +173,7 @@ const ConsumptionChart = ({
   anomalyMarkers = [],
   liveWindowMinutes = 30,
   stressPhase,
+  stressStartedAt,
 }: ConsumptionChartProps) => {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -166,15 +182,28 @@ const ConsumptionChart = ({
   const [selectedRange, setSelectedRange] = useState('week');
   const [hiddenSensors, setHiddenSensors] = useState<Set<string>>(new Set());
   const [selectedAnomaly, setSelectedAnomaly] = useState<AnomalyMarker | null>(null);
+  const [liveNow, setLiveNow] = useState(() => new Date());
+  const frozenBaselinesRef = useRef<Map<string, number> | null>(null);
 
   useEffect(() => {
     if (isLive) setSelectedRange('hour');
   }, [isLive]);
 
-  const to = useMemo(
-    () => (isLive ? new Date() : buildAnchorDate(objectItem)),
-    [objectItem, isLive],
-  );
+  // Sliding live window: advance `to` on each poll so new readings are included
+  useEffect(() => {
+    if (!isLive || !refetchInterval) return undefined;
+    setLiveNow(new Date());
+    const id = window.setInterval(() => setLiveNow(new Date()), refetchInterval);
+    return () => window.clearInterval(id);
+  }, [isLive, refetchInterval]);
+
+  useEffect(() => {
+    if (!isLive) {
+      frozenBaselinesRef.current = null;
+    }
+  }, [isLive]);
+
+  const to = isLive ? liveNow : buildAnchorDate(objectItem);
 
   const { from, agg } = useMemo(() => {
     if (isLive) return liveWindow(to, liveWindowMinutes);
@@ -198,7 +227,7 @@ const ConsumptionChart = ({
     })),
   });
 
-  const isLoading = telemetryQueries.some((q) => q.isLoading);
+  const isLoading = telemetryQueries.some((q) => q.isLoading && !q.data);
   const hasError = telemetryQueries.some((q) => q.error);
 
   const rawChartData = useMemo(() => {
@@ -220,11 +249,19 @@ const ConsumptionChart = ({
     const map = new Map<string, number>();
     if (!percentMode || !rawChartData.length) return map;
 
-    const baselineEnd = new Date(String(rawChartData[0].time)).getTime() + 5 * 60_000;
+    if (frozenBaselinesRef.current?.size) {
+      return frozenBaselinesRef.current;
+    }
+
+    const baselineStartMs = stressStartedAt
+      ?? new Date(String(rawChartData[0].time)).getTime();
+    const baselineEndMs = baselineStartMs + 5 * 60_000;
+
     sensors.forEach((sensor) => {
       const values: number[] = [];
       rawChartData.forEach((row) => {
-        if (new Date(String(row.time)).getTime() > baselineEnd) return;
+        const t = new Date(String(row.time)).getTime();
+        if (t < baselineStartMs || t > baselineEndMs) return;
         const v = row[sensor.label];
         if (typeof v === 'number') values.push(v);
       });
@@ -232,8 +269,12 @@ const ConsumptionChart = ({
         map.set(sensor.label, values.reduce((a, b) => a + b, 0) / values.length);
       }
     });
+
+    if (stressStartedAt && map.size > 0) {
+      frozenBaselinesRef.current = map;
+    }
     return map;
-  }, [rawChartData, sensors, percentMode]);
+  }, [rawChartData, sensors, percentMode, stressStartedAt]);
 
   const chartData = useMemo(() => {
     if (!percentMode) return rawChartData;
@@ -256,11 +297,11 @@ const ConsumptionChart = ({
   const plottedAnomalies = useMemo((): PlottedAnomaly[] => {
     return anomalyMarkers.flatMap((anomaly) => {
       const sensorLabel = resolveSensorLabel(anomaly, sensors);
-      const { chartTime, y } = snapAnomalyToChart(anomaly.time, sensorLabel, chartData);
-      if (y == null) return [];
-      return [{ anomaly, chartTime, y }];
+      const snapped = snapAnomalyToChart(anomaly, sensorLabel, chartData, percentMode);
+      if (!snapped) return [];
+      return [{ anomaly, chartTime: snapped.chartTime, y: snapped.y }];
     });
-  }, [anomalyMarkers, sensors, chartData]);
+  }, [anomalyMarkers, sensors, chartData, percentMode]);
 
   const stats = useMemo(() => {
     const values: number[] = [];
@@ -318,7 +359,7 @@ const ConsumptionChart = ({
   }
 
   const yDomain: [number | string, number | string] = percentMode
-    ? [70, 160]
+    ? ['dataMin - 5', 'dataMax + 5']
     : ['dataMin - 5', 'dataMax + 5'];
 
   return (

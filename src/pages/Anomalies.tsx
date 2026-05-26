@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Alert, Card, Empty, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Alert, Card, Checkbox, Empty, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useOutletContext } from 'react-router-dom';
 import type { AppLayoutContextValue } from '../components/MainLayout';
+import AnomalyDetailModal from '../components/AnomalyDetailModal';
 import { useStressTestContextOptional } from '../context/StressTestContext';
 import { useAnomalies, type AnomalyRecord } from '../api/hooks';
 import { formatAnomalyDeviation } from '../utils/anomalyUtils';
@@ -28,11 +29,18 @@ const Anomalies = () => {
   const stressActive = !!stress?.active;
   const metricsObjectId = stressActive && stress?.objectId ? stress.objectId : selectedObjectId;
   const [severity, setSeverity] = useState<string>();
+  const [sessionOnly, setSessionOnly] = useState(false);
+  const [selectedAnomaly, setSelectedAnomaly] = useState<AnomalyRecord | null>(null);
   const { data = [], isLoading, error } = useAnomalies(
     metricsObjectId,
     severity,
     stressActive ? POLL_MS : false,
   );
+
+  const filteredData = useMemo(() => {
+    if (!sessionOnly || !stress?.startedAt) return data;
+    return data.filter((a) => new Date(a.time).getTime() >= stress.startedAt! - 5000);
+  }, [data, sessionOnly, stress?.startedAt]);
 
   const columns = useMemo<ColumnsType<AnomalyRecord>>(
     () => [
@@ -118,7 +126,15 @@ const Anomalies = () => {
                 label: item.label,
               }))}
             />
-            <Statistic title="Записей" value={data.length} style={{ flex: '0 0 auto' }} />
+            {stressActive && (
+              <Checkbox
+                checked={sessionOnly}
+                onChange={(e) => setSessionOnly(e.target.checked)}
+              >
+                Только текущая сессия
+              </Checkbox>
+            )}
+            <Statistic title="Записей" value={filteredData.length} style={{ flex: '0 0 auto' }} />
           </div>
         </Space>
       </Card>
@@ -129,12 +145,16 @@ const Anomalies = () => {
         <Card className="surface-card table-card">
           <Table
             columns={columns}
-            dataSource={data}
+            dataSource={filteredData}
             loading={isLoading}
             rowKey="id"
             size="small"
             scroll={{ x: 520 }}
             pagination={{ pageSize: 12, showSizeChanger: false, simple: true }}
+            onRow={(record) => ({
+              onClick: () => setSelectedAnomaly(record),
+              style: { cursor: 'pointer' },
+            })}
             locale={{
               emptyText: (
                 <Empty
@@ -146,6 +166,12 @@ const Anomalies = () => {
           />
         </Card>
       )}
+
+      <AnomalyDetailModal
+        anomaly={selectedAnomaly}
+        open={!!selectedAnomaly}
+        onClose={() => setSelectedAnomaly(null)}
+      />
     </Space>
   );
 };

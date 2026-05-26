@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Card, Col, Collapse, Drawer, Grid, Progress, Row, Space, Statistic, Tag, Typography } from 'antd';
 import {
   BulbOutlined,
@@ -19,7 +20,7 @@ import {
 } from 'recharts';
 import ConsumptionChart from './ConsumptionChart';
 import { useStressTestContextOptional } from '../context/StressTestContext';
-import { useHealthScore, useRul, type MonitoringObject, type ObjectSensor } from '../api/hooks';
+import { useHealthScore, useRul, useAnomalies, type MonitoringObject, type ObjectSensor } from '../api/hooks';
 import { EQUIPMENT_PASSPORTS } from '../data/equipment-passports';
 
 const POLL_MS = 2000;
@@ -77,18 +78,36 @@ const EquipmentDrawer = ({ open, category, sensors, objectId, objectItem, onClos
   const screens = useBreakpoint();
   const stress = useStressTestContextOptional();
   const stressActive = !!stress?.active;
-  const healthSince = stressActive && stress?.startedAt
-    ? new Date(stress.startedAt).toISOString()
-    : undefined;
   const cfg = CATEGORY_CONFIG[category] ?? { label: category, icon: DashboardOutlined };
   const Icon = cfg.icon;
 
+  const stressActiveForObject = stressActive
+    && stress?.objectId === objectId
+    && stress?.startedAt != null;
+  const stressStartedAt = stressActiveForObject ? stress!.startedAt : undefined;
+  const healthSince = stressStartedAt
+    ? new Date(stressStartedAt).toISOString()
+    : undefined;
+
+  const { data: drawerAnomalies = [] } = useAnomalies(
+    objectId,
+    undefined,
+    stressActiveForObject ? POLL_MS : false,
+  );
+
+  const anomalyMarkers = useMemo(() => {
+    if (!stressActiveForObject || !stressStartedAt) return [];
+    return drawerAnomalies.filter(
+      (a) => new Date(a.time).getTime() >= stressStartedAt - 5000,
+    );
+  }, [drawerAnomalies, stressActiveForObject, stressStartedAt]);
+
   const { data: health } = useHealthScore(
     objectId,
-    stressActive ? POLL_MS : false,
+    stressActiveForObject ? POLL_MS : false,
     healthSince,
   );
-  const { data: rul } = useRul(objectId, stressActive ? POLL_MS : false);
+  const { data: rul } = useRul(objectId, stressActiveForObject ? POLL_MS : false);
 
   const passport = EQUIPMENT_PASSPORTS[category];
 
@@ -299,7 +318,15 @@ const EquipmentDrawer = ({ open, category, sensors, objectId, objectItem, onClos
         )}
 
         {/* ── Consumption chart ── */}
-        <ConsumptionChart sensors={sensors} objectItem={objectItem} />
+        <ConsumptionChart
+          sensors={sensors}
+          objectItem={objectItem}
+          refetchInterval={stressActiveForObject ? POLL_MS : false}
+          anomalyMarkers={stressActiveForObject ? anomalyMarkers : []}
+          liveWindowMinutes={30}
+          stressPhase={stressActiveForObject ? stress?.stressPhase : undefined}
+          stressStartedAt={stressStartedAt}
+        />
       </Space>
     </Drawer>
   );

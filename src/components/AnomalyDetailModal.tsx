@@ -1,5 +1,5 @@
 import { Button, Descriptions, Modal, Tag, Typography } from 'antd';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { AnomalyRecord } from '../api/hooks';
 import {
   anomalySeverityLabel,
@@ -23,6 +23,7 @@ interface AnomalyDetailModalProps {
 }
 
 export default function AnomalyDetailModal({ anomaly, open, onClose }: AnomalyDetailModalProps) {
+  const navigate = useNavigate();
   if (!anomaly) return null;
 
   const deviation = formatAnomalyDeviation(anomaly);
@@ -37,9 +38,16 @@ export default function AnomalyDetailModal({ anomaly, open, onClose }: AnomalyDe
         <Button key="close" onClick={onClose}>
           Закрыть
         </Button>,
-        <Link key="journal" to="/anomalies" onClick={onClose}>
-          <Button type="primary">Журнал аномалий</Button>
-        </Link>,
+        <Button
+          key="journal"
+          type="primary"
+          onClick={() => {
+            onClose();
+            navigate('/anomalies');
+          }}
+        >
+          Журнал аномалий
+        </Button>,
       ]}
       width={480}
     >
