@@ -260,10 +260,41 @@ Cron (ежедневно в 3:00):
 | Backend падает при старте | `docker compose ... logs backend` → ошибка Alembic / `create_hypertable` → не TimescaleDB |
 | `502` / сайт не открывается | `docker compose ... ps` — все контейнеры Up; проверьте `DOMAIN` в `.env` и Caddy-логи |
 | Нет HTTPS / certificate error | DuckDNS IP ≠ IP сервера; порт 80 закрыт; подождите 5 мин после смены DNS |
+| Caddy: `lookup ... on 127.0.0.53:53: connection refused` | DNS внутри Docker: см. раздел ниже |
 | Пустой Dashboard | Не выполнен seed (часть D) |
 | ML offline | `docker compose ... logs ml`; проверьте RAM (нужно ~4 ГБ) |
 | CORS в браузере | Добавьте URL в `CORS_ORIGINS` в `.env`, перезапустите backend |
 | Стресс-тест обрывается | Логи backend; проверьте что seed создал equipment |
+
+### DNS внутри Docker (Caddy / Let's Encrypt)
+
+Если в логах Caddy: `lookup acme-v02.api.letsencrypt.org on 127.0.0.53:53: connection refused` — контейнер не может резолвить DNS через systemd-resolved хоста.
+
+**Быстрый фикс на сервере:**
+
+```bash
+# 1. DNS для всех контейнеров Docker
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<'EOF'
+{
+  "dns": ["8.8.8.8", "1.1.1.1"]
+}
+EOF
+systemctl restart docker
+
+# 2. Пересоздать стек
+cd /opt/MyHouse
+git pull origin main
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate
+```
+
+Проверка DNS из контейнера:
+
+```bash
+docker exec myhouse-caddy wget -qO- https://acme-v02.api.letsencrypt.org/directory | head -c 80
+curl -s http://127.0.0.1/health
+curl -s https://pulsetok.duckdns.org/health
+```
 
 ---
 

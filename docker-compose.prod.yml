@@ -30,6 +30,9 @@ services:
     container_name: myhouse-caddy
     environment:
       DOMAIN: ${DOMAIN}
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "80:80"
       - "443:443"
