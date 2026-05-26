@@ -12,10 +12,18 @@
 
 * { box-sizing: border-box; }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 html, body, #root {
   min-height: 100%;
   margin: 0;
   overflow-x: hidden;
+}
+
+body.stress-active {
+  padding-bottom: 56px;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -350,9 +358,43 @@ a { color: inherit; text-decoration: none; }
 
 /* ─── Chart ─────────────────────────────────────────────── */
 
+.stress-timeline-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  background: rgba(236, 240, 232, 0.96);
+  border-top: 1px solid rgba(13, 40, 24, 0.1);
+  backdrop-filter: blur(6px);
+  padding: 8px 16px 10px;
+}
+
+.chart-card--stable .ant-card-body {
+  min-height: 480px;
+}
+
+.chart-card__meta--stable {
+  min-height: 40px;
+  margin-bottom: 8px;
+}
+
+.chart-card__meta-text {
+  display: block;
+  line-height: 1.45;
+  min-height: 36px;
+}
+
+.chart-card__legend-toggle--stable {
+  min-height: 32px;
+  margin-bottom: 8px;
+}
+
 .chart-shell {
   width: 100%;
   height: 380px;
+  flex-shrink: 0;
+  contain: layout style;
 }
 
 .chart-card__meta {

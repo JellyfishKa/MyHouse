@@ -103,6 +103,11 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     return () => window.clearInterval(id);
   }, [active]);
 
+  useEffect(() => {
+    document.body.classList.toggle('stress-active', active);
+    return () => document.body.classList.remove('stress-active');
+  }, [active]);
+
   const runRetrain = useCallback(
     async (days: number, _step?: number, showToast = true) => {
       const targetId = stressObjectIdRef.current ?? objectId;
@@ -265,10 +270,10 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
 
   return (
     <StressTestContext.Provider value={value}>
+      {children}
       {active && (
         <StressTimeline startedAt={startedAt} endsAt={endsAt} tick={tick} />
       )}
-      {children}
     </StressTestContext.Provider>
   );
 }

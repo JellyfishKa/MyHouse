@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Button, Descriptions, Modal, Tag, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { AnomalyRecord } from '../api/hooks';
@@ -22,17 +23,15 @@ interface AnomalyDetailModalProps {
   onClose: () => void;
 }
 
-export default function AnomalyDetailModal({ anomaly, open, onClose }: AnomalyDetailModalProps) {
+function AnomalyDetailModal({ anomaly, open, onClose }: AnomalyDetailModalProps) {
   const navigate = useNavigate();
-  if (!anomaly) return null;
-
-  const deviation = formatAnomalyDeviation(anomaly);
-  const cause = inferAnomalyCause(anomaly);
 
   return (
     <Modal
       title="Аномалия потребления"
       open={open}
+      destroyOnClose={false}
+      maskClosable
       onCancel={onClose}
       footer={[
         <Button key="close" onClick={onClose}>
@@ -50,40 +49,51 @@ export default function AnomalyDetailModal({ anomaly, open, onClose }: AnomalyDe
         </Button>,
       ]}
       width={480}
+      zIndex={1100}
+      className="anomaly-detail-modal"
     >
-      <Descriptions column={1} size="small" bordered>
-        <Descriptions.Item label="Время">
-          {new Date(anomaly.time).toLocaleString('ru-RU')}
-        </Descriptions.Item>
-        <Descriptions.Item label="Сенсор">
-          {anomaly.sensor_label ?? anomaly.category}
-        </Descriptions.Item>
-        <Descriptions.Item label="Категория">{anomaly.category}</Descriptions.Item>
-        <Descriptions.Item label="Уровень">
-          <Tag color={SEVERITY_TAG[anomaly.severity] ?? 'default'}>
-            {anomalySeverityLabel(anomaly.severity)}
-          </Tag>
-        </Descriptions.Item>
-        <Descriptions.Item label="Факт">
-          {anomaly.value.toFixed(1)} Вт
-        </Descriptions.Item>
-        <Descriptions.Item label="Норма">
-          {anomaly.expected != null ? `${anomaly.expected.toFixed(1)} Вт` : '—'}
-        </Descriptions.Item>
-        <Descriptions.Item label="Отклонение">
-          {deviation.color ? (
-            <Text style={{ color: deviation.color, fontWeight: 600 }}>{deviation.text}</Text>
-          ) : (
-            deviation.text
-          )}
-        </Descriptions.Item>
-      </Descriptions>
+      {anomaly && (
+        <>
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label="Время">
+              {new Date(anomaly.time).toLocaleString('ru-RU')}
+            </Descriptions.Item>
+            <Descriptions.Item label="Сенсор">
+              {anomaly.sensor_label ?? anomaly.category}
+            </Descriptions.Item>
+            <Descriptions.Item label="Категория">{anomaly.category}</Descriptions.Item>
+            <Descriptions.Item label="Уровень">
+              <Tag color={SEVERITY_TAG[anomaly.severity] ?? 'default'}>
+                {anomalySeverityLabel(anomaly.severity)}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="Факт">
+              {anomaly.value.toFixed(1)} Вт
+            </Descriptions.Item>
+            <Descriptions.Item label="Норма">
+              {anomaly.expected != null ? `${anomaly.expected.toFixed(1)} Вт` : '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Отклонение">
+              {(() => {
+                const deviation = formatAnomalyDeviation(anomaly);
+                return deviation.color ? (
+                  <Text style={{ color: deviation.color, fontWeight: 600 }}>{deviation.text}</Text>
+                ) : (
+                  deviation.text
+                );
+              })()}
+            </Descriptions.Item>
+          </Descriptions>
 
-      <Paragraph style={{ marginTop: 16, marginBottom: 0 }}>
-        <Text strong>Возможная причина</Text>
-        <br />
-        <Text type="secondary">{cause}</Text>
-      </Paragraph>
+          <Paragraph style={{ marginTop: 16, marginBottom: 0 }}>
+            <Text strong>Возможная причина</Text>
+            <br />
+            <Text type="secondary">{inferAnomalyCause(anomaly)}</Text>
+          </Paragraph>
+        </>
+      )}
     </Modal>
   );
 }
+
+export default memo(AnomalyDetailModal);

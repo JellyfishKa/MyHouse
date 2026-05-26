@@ -48,7 +48,7 @@ export default function StressTimeline({ startedAt, endsAt, tick = 0 }: StressTi
   }, [startedAt, endsAt, tick]);
 
   return (
-    <div style={{ padding: '0 16px 8px' }}>
+    <div className="stress-timeline-bar">
       <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
         Стресс-тест · старт {startLabel} · прошло {elapsedSec} с · осталось {remainingSec} с
       </Text>

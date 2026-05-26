@@ -1,11 +1,12 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Card, Checkbox, Empty, Grid, Select, Segmented, Spin, Typography } from 'antd';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, keepPreviousData } from '@tanstack/react-query';
 import {
   CartesianGrid,
   ComposedChart,
   Legend,
   Line,
+  ReferenceArea,
   ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
@@ -21,6 +22,9 @@ import {
   type ObjectSensor,
 } from '../api/hooks';
 import AnomalyDetailModal from './AnomalyDetailModal';
+
+const CHART_HEIGHT = 380;
+const CHART_HEIGHT_MOBILE = 260;
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -81,7 +85,32 @@ const CHART_LINE_STYLES = [
   { stroke: '#7c3aed', strokeDasharray: '10 4 2 4', strokeWidth: 2.2 },
 ];
 
-const SNAP_MS = 90_000;
+const LIVE_BUCKET_MS = 2_000;
+
+function bucketTimeKey(iso: string, bucketMs: number): string {
+  const ms = Math.round(new Date(iso).getTime() / bucketMs) * bucketMs;
+  return new Date(ms).toISOString();
+}
+
+function mergeReadingsToRows(
+  sensors: ObjectSensor[],
+  telemetryQueries: { data?: AggregatedReading[] }[],
+  bucketMs: number,
+): ChartRow[] {
+  const timeMap = new Map<string, ChartRow>();
+  sensors.forEach((sensor, idx) => {
+    const readings = telemetryQueries[idx].data;
+    if (!readings) return;
+    readings.forEach((r) => {
+      const key = bucketTimeKey(r.time, bucketMs);
+      if (!timeMap.has(key)) timeMap.set(key, { time: key });
+      timeMap.get(key)![sensor.label] = r.value;
+    });
+  });
+  return Array.from(timeMap.values()).sort(
+    (a, b) => new Date(String(a.time)).getTime() - new Date(String(b.time)).getTime(),
+  );
+}
 
 const rangeToWindow = (range: string, anchor: Date) => {
   const from = new Date(anchor);
@@ -103,12 +132,6 @@ const rangeToWindow = (range: string, anchor: Date) => {
   }
   from.setDate(anchor.getDate() - 30);
   return { from, agg: 'day' as const };
-};
-
-const liveWindow = (anchor: Date, minutes: number) => {
-  const from = new Date(anchor);
-  from.setMinutes(anchor.getMinutes() - minutes);
-  return { from, agg: 'raw' as const };
 };
 
 function computeBaselines(
@@ -133,21 +156,14 @@ function computeBaselines(
     }
 
     if (!values.length && stressStartedAt) {
-      const alignedStart = Math.floor(stressStartedAt / 60_000) * 60_000;
-      const earlyEnd = stressStartedAt + 3 * 60_000;
+      const alignedStart = stressStartedAt;
+      const earlyEnd = stressStartedAt + 30_000;
       rawChartData.forEach((row) => {
         const t = new Date(String(row.time)).getTime();
         if (t >= alignedStart && t <= earlyEnd) {
           const v = row[sensor.label];
           if (typeof v === 'number') values.push(v);
         }
-      });
-    }
-
-    if (!values.length) {
-      rawChartData.forEach((row) => {
-        const v = row[sensor.label];
-        if (typeof v === 'number') values.push(v);
       });
     }
 
@@ -158,6 +174,8 @@ function computeBaselines(
 
   return map;
 }
+
+const SNAP_MS = 90_000;
 
 const buildAnchorDate = (objectItem?: MonitoringObject) =>
   objectItem?.last_reading_at ? new Date(objectItem.last_reading_at) : new Date();
@@ -214,6 +232,141 @@ function snapAnomalyToChart(
   return null;
 }
 
+interface ChartCanvasProps {
+  chartData: ChartRow[];
+  sensors: ObjectSensor[];
+  hiddenSensors: Set<string>;
+  isMobile: boolean;
+  isLive: boolean;
+  percentMode: boolean;
+  yDomain: [number, number] | [string, string];
+  stressStartX?: string;
+  stressStartedAt?: number;
+  stressPhase?: StressPhaseInfo;
+  plottedAnomalies: PlottedAnomaly[];
+  onAnomalyClick: (anomaly: AnomalyMarker) => void;
+}
+
+const ChartCanvas = memo(function ChartCanvas({
+  chartData,
+  sensors,
+  hiddenSensors,
+  isMobile,
+  isLive,
+  percentMode,
+  yDomain,
+  stressStartX,
+  stressStartedAt,
+  stressPhase,
+  plottedAnomalies,
+  onAnomalyClick,
+}: ChartCanvasProps) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -8, bottom: 4 }}>
+          <CartesianGrid stroke="#d7e3e0" strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="time"
+            minTickGap={isMobile ? 48 : 36}
+            tick={{ fontSize: isMobile ? 10 : 11 }}
+            tickFormatter={(v) =>
+              new Date(v).toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }
+          />
+          <YAxis
+            unit={percentMode ? ' %' : ' Вт'}
+            domain={yDomain}
+            tick={{ fontSize: isMobile ? 10 : 11 }}
+            width={isMobile ? 48 : 56}
+          />
+          <Tooltip
+            contentStyle={{ borderRadius: 10, border: '1px solid rgba(13,40,24,0.1)' }}
+            labelFormatter={(label) => new Date(label).toLocaleString('ru-RU')}
+            formatter={(value, name, item) => {
+              if (typeof value !== 'number') return [String(value), name];
+              const payload = item?.payload as ChartRow | undefined;
+              const wKey = `__w_${String(name)}`;
+              const w = payload?.[wKey];
+              if (percentMode && typeof w === 'number') {
+                return [`${value.toFixed(1)}% (${w.toFixed(0)} Вт)`, name];
+              }
+              return [`${value.toFixed(1)}${percentMode ? '%' : ' Вт'}`, name];
+            }}
+          />
+          {!isMobile && !isLive && <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12 }} />}
+
+          {percentMode && (
+            <ReferenceLine
+              y={100}
+              stroke="#64748b"
+              strokeWidth={1.5}
+              strokeDasharray="4 4"
+              label={{ value: 'норма 100%', position: 'insideTopRight', fontSize: 10, fill: '#64748b' }}
+            />
+          )}
+
+          {stressStartX && isLive && (
+            <ReferenceLine
+              x={stressStartX}
+              stroke="#1677ff"
+              strokeDasharray="3 3"
+              label={{ value: 'стресс', position: 'insideTopLeft', fontSize: 10, fill: '#1677ff' }}
+            />
+          )}
+
+          {stressStartedAt && isLive && stressPhase && (
+            <ReferenceArea
+              x1={stressStartX}
+              x2={chartData.length ? String(chartData[chartData.length - 1].time) : stressStartX}
+              fill="#1677ff"
+              fillOpacity={0.04}
+            />
+          )}
+
+          {plottedAnomalies.map(({ anomaly, chartTime, y }) => (
+            <ReferenceDot
+              key={anomaly.id}
+              x={chartTime}
+              y={y}
+              r={9}
+              fill={SEVERITY_DOT[anomaly.severity] ?? '#999'}
+              stroke="#fff"
+              strokeWidth={2}
+              style={{ cursor: 'pointer' }}
+              onClick={() => onAnomalyClick(anomaly)}
+            />
+          ))}
+
+          {sensors.map((sensor, index) => {
+            if (hiddenSensors.has(sensor.id)) return null;
+            const style = CHART_LINE_STYLES[index % CHART_LINE_STYLES.length];
+            const hasSeries = chartData.some((row) => typeof row[sensor.label] === 'number');
+            if (!hasSeries) return null;
+            return (
+              <Line
+                key={sensor.id}
+                type="monotone"
+                dataKey={sensor.label}
+                stroke={style.stroke}
+                strokeWidth={style.strokeWidth}
+                strokeDasharray={style.strokeDasharray}
+                dot={false}
+                connectNulls
+                activeDot={{ r: 4 }}
+                isAnimationActive={false}
+              />
+            );
+          })}
+        </ComposedChart>
+    </ResponsiveContainer>
+  );
+});
+
 const ConsumptionChart = ({
   objectItem,
   sensors,
@@ -230,72 +383,89 @@ const ConsumptionChart = ({
   const [selectedRange, setSelectedRange] = useState('week');
   const [hiddenSensors, setHiddenSensors] = useState<Set<string>>(new Set());
   const [selectedAnomaly, setSelectedAnomaly] = useState<AnomalyMarker | null>(null);
-  const [liveNow, setLiveNow] = useState(() => new Date());
   const frozenBaselinesRef = useRef<Map<string, number> | null>(null);
+  const hasShownChartRef = useRef(false);
+  const yDomainRef = useRef<[number, number]>([85, 115]);
+
+  const handleAnomalyClick = useCallback((anomaly: AnomalyMarker) => {
+    setSelectedAnomaly(anomaly);
+  }, []);
+
+  const handleModalClose = useCallback(() => {
+    setSelectedAnomaly(null);
+  }, []);
 
   useEffect(() => {
     if (isLive) setSelectedRange('hour');
   }, [isLive]);
 
-  // Sliding live window: advance `to` on each poll so new readings are included
-  useEffect(() => {
-    if (!isLive || !refetchInterval) return undefined;
-    setLiveNow(new Date());
-    const id = window.setInterval(() => setLiveNow(new Date()), refetchInterval);
-    return () => window.clearInterval(id);
-  }, [isLive, refetchInterval]);
-
   useEffect(() => {
     if (!isLive) {
       frozenBaselinesRef.current = null;
+      hasShownChartRef.current = false;
+      yDomainRef.current = [85, 115];
     }
   }, [isLive]);
 
   useEffect(() => {
     frozenBaselinesRef.current = null;
+    yDomainRef.current = [85, 115];
   }, [stressStartedAt]);
 
-  const to = isLive ? liveNow : buildAnchorDate(objectItem);
+  const to = buildAnchorDate(objectItem);
 
   const { from, agg } = useMemo(() => {
-    if (isLive) return liveWindow(to, liveWindowMinutes);
+    if (isLive) return { from: new Date(), agg: 'raw' as const };
     return rangeToWindow(selectedRange, to);
-  }, [isLive, liveWindowMinutes, selectedRange, to]);
+  }, [isLive, selectedRange, to]);
 
   const toIso = to.toISOString();
   const fromIso = from.toISOString();
 
+  const telemetryQueries = useQueries({
+    queries: sensors.map((sensor) => {
+      if (isLive) {
+        return {
+          queryKey: ['telemetry', sensor.id, 'live', liveWindowMinutes, agg],
+          queryFn: () => {
+            const now = new Date();
+            const windowFrom = new Date(now.getTime() - liveWindowMinutes * 60_000);
+            return fetchTelemetry(
+              sensor.id,
+              windowFrom.toISOString(),
+              now.toISOString(),
+              agg,
+            );
+          },
+          enabled: !!sensor.id,
+          refetchInterval: refetchInterval ?? false,
+          placeholderData: keepPreviousData,
+        };
+      }
+      return {
+        queryKey: ['telemetry', sensor.id, fromIso, toIso, agg, 'static'],
+        queryFn: () => fetchTelemetry(sensor.id, fromIso, toIso, agg),
+        enabled: !!sensor.id,
+        refetchInterval: false as const,
+      };
+    }),
+  });
+
+  const isInitialLoading = telemetryQueries.some((q) => q.isLoading && !q.data);
+  const hasError = telemetryQueries.some((q) => q.error);
   const visibleSensors = useMemo(
     () => sensors.filter((s) => !hiddenSensors.has(s.id)),
     [sensors, hiddenSensors],
   );
 
-  const telemetryQueries = useQueries({
-    queries: sensors.map((sensor) => ({
-      queryKey: ['telemetry', sensor.id, fromIso, toIso, agg, isLive ? 'live' : 'static'],
-      queryFn: () => fetchTelemetry(sensor.id, fromIso, toIso, agg),
-      enabled: !!sensor.id,
-      refetchInterval: refetchInterval ?? false,
-    })),
-  });
-
-  const isLoading = telemetryQueries.some((q) => q.isLoading && !q.data);
-  const hasError = telemetryQueries.some((q) => q.error);
-
-  const rawChartData = useMemo(() => {
-    const timeMap = new Map<string, ChartRow>();
-    sensors.forEach((sensor, idx) => {
-      const readings = telemetryQueries[idx].data as AggregatedReading[] | undefined;
-      if (!readings) return;
-      readings.forEach((r) => {
-        if (!timeMap.has(r.time)) timeMap.set(r.time, { time: r.time });
-        timeMap.get(r.time)![sensor.label] = r.value;
-      });
-    });
-    return Array.from(timeMap.values()).sort(
-      (a, b) => new Date(String(a.time)).getTime() - new Date(String(b.time)).getTime(),
-    );
-  }, [sensors, telemetryQueries]);
+  const rawChartData = useMemo(
+    () => mergeReadingsToRows(
+      sensors,
+      telemetryQueries,
+      isLive ? LIVE_BUCKET_MS : 60_000,
+    ),
+    [sensors, telemetryQueries, isLive],
+  );
 
   const baselines = useMemo(() => {
     if (!percentMode || !rawChartData.length) return new Map<string, number>();
@@ -305,8 +475,9 @@ const ConsumptionChart = ({
     }
 
     const map = computeBaselines(rawChartData, sensors, stressStartedAt);
+    const allReady = sensors.every((s) => map.has(s.label));
 
-    if (stressStartedAt && map.size > 0) {
+    if (stressStartedAt && allReady) {
       frozenBaselinesRef.current = map;
     }
     return map;
@@ -355,6 +526,36 @@ const ConsumptionChart = ({
     };
   }, [chartData, visibleSensors]);
 
+  const stressStartX = useMemo(() => {
+    if (!stressStartedAt || !chartData.length) return undefined;
+    const key = bucketTimeKey(new Date(stressStartedAt).toISOString(), LIVE_BUCKET_MS);
+    const exact = chartData.find((r) => String(r.time) === key);
+    if (exact) return String(exact.time);
+    let best = String(chartData[0].time);
+    let bestDiff = Infinity;
+    chartData.forEach((row) => {
+      const d = Math.abs(new Date(String(row.time)).getTime() - stressStartedAt);
+      if (d < bestDiff) {
+        bestDiff = d;
+        best = String(row.time);
+      }
+    });
+    return best;
+  }, [stressStartedAt, chartData]);
+
+  const yDomain: [number, number] | [string, string] = useMemo(() => {
+    if (!percentMode || !stats) return ['dataMin - 5', 'dataMax + 5'];
+    const nextLo = Math.max(0, Math.floor(stats.min / 5) * 5 - 5);
+    const nextHi = Math.min(200, Math.ceil(stats.max / 5) * 5 + 5);
+    const [curLo, curHi] = yDomainRef.current;
+    const lo = isLive ? Math.min(curLo, nextLo) : nextLo;
+    const hi = isLive ? Math.max(curHi, Math.max(nextHi, lo + 20)) : Math.max(nextHi, nextLo + 20);
+    if (isLive) {
+      yDomainRef.current = [lo, hi];
+    }
+    return [lo, hi];
+  }, [percentMode, stats, isLive]);
+
   const toggleSensor = (id: string) => {
     setHiddenSensors((prev) => {
       const next = new Set(prev);
@@ -383,7 +584,7 @@ const ConsumptionChart = ({
     />
   );
 
-  if (isLoading) return <div className="chart-loading"><Spin size="large" /></div>;
+  if (isInitialLoading) return <div className="chart-loading"><Spin size="large" /></div>;
   if (hasError) return <Alert type="error" message="Не удалось загрузить временной ряд" showIcon />;
 
   if (!sensors.length || !rawChartData.length) {
@@ -398,7 +599,11 @@ const ConsumptionChart = ({
     sensors.some((s) => typeof row[s.label] === 'number'),
   );
 
-  if (percentMode && !hasPlottableData) {
+  if (hasPlottableData) {
+    hasShownChartRef.current = true;
+  }
+
+  if (percentMode && !hasPlottableData && !hasShownChartRef.current) {
     return (
       <Card className="surface-card chart-card" title="Потребление — live (% от нормы)">
         <div className="chart-loading"><Spin tip="Сбор базовой линии…" /></div>
@@ -406,14 +611,12 @@ const ConsumptionChart = ({
     );
   }
 
-  const yDomain: [number | string, number | string] = percentMode
-    ? ['dataMin - 5', 'dataMax + 5']
-    : ['dataMin - 5', 'dataMax + 5'];
+  const chartHeight = isMobile ? CHART_HEIGHT_MOBILE : CHART_HEIGHT;
 
   return (
     <>
       <Card
-        className="surface-card chart-card"
+        className="surface-card chart-card chart-card--stable"
         title={percentMode ? 'Потребление — live (% от нормы)' : `Потребление — ${RANGE_LABELS[selectedRange] ?? selectedRange}`}
         extra={!isMobile ? rangeControl : undefined}
       >
@@ -421,8 +624,8 @@ const ConsumptionChart = ({
           <div className="chart-card__controls">{rangeControl}</div>
         )}
 
-        <div className="chart-card__meta">
-          <Text type="secondary">
+        <div className="chart-card__meta chart-card__meta--stable">
+          <Text type="secondary" className="chart-card__meta-text">
             {isLive
               ? `Live · ${liveWindowMinutes} мин · ${agg}`
               : `${from.toLocaleDateString('ru-RU')} — ${to.toLocaleDateString('ru-RU')} · ${agg}`}
@@ -432,12 +635,16 @@ const ConsumptionChart = ({
                 ? ` · min ${stats.min.toFixed(0)}% / max ${stats.max.toFixed(0)}%`
                 : ` · min ${stats.min.toFixed(0)} / max ${stats.max.toFixed(0)} Вт`
             )}
-            {plottedAnomalies.length > 0 && ' · клик по точке — детали аномалии'}
+            {plottedAnomalies.length > 0
+              ? ` · ${plottedAnomalies.length} аномал. — клик по точке`
+              : stressStartedAt && isLive
+                ? ' · аномалии на шагах 15/30/60/90 с'
+                : '\u00A0'}
           </Text>
         </div>
 
         {isLive && (
-          <div className="chart-card__legend-toggle" style={{ marginBottom: 8 }}>
+          <div className="chart-card__legend-toggle chart-card__legend-toggle--stable">
             {sensors.map((sensor) => (
               <Checkbox
                 key={sensor.id}
@@ -451,95 +658,28 @@ const ConsumptionChart = ({
           </div>
         )}
 
-        <div className="chart-shell">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -8, bottom: 4 }}>
-              <CartesianGrid stroke="#d7e3e0" strokeDasharray="3 3" vertical={false} />
-              <XAxis
-                dataKey="time"
-                minTickGap={isMobile ? 48 : 36}
-                tick={{ fontSize: isMobile ? 10 : 11 }}
-                tickFormatter={(v) =>
-                  new Date(v).toLocaleString('ru-RU', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                }
-              />
-              <YAxis
-                unit={percentMode ? ' %' : ' Вт'}
-                domain={yDomain}
-                tick={{ fontSize: isMobile ? 10 : 11 }}
-                width={isMobile ? 48 : 56}
-              />
-              <Tooltip
-                contentStyle={{ borderRadius: 10, border: '1px solid rgba(13,40,24,0.1)' }}
-                labelFormatter={(label) => new Date(label).toLocaleString('ru-RU')}
-                formatter={(value, name, item) => {
-                  if (typeof value !== 'number') return [String(value), name];
-                  const payload = item?.payload as ChartRow | undefined;
-                  const wKey = `__w_${String(name)}`;
-                  const w = payload?.[wKey];
-                  if (percentMode && typeof w === 'number') {
-                    return [`${value.toFixed(1)}% (${w.toFixed(0)} Вт)`, name];
-                  }
-                  return [`${value.toFixed(1)}${percentMode ? '%' : ' Вт'}`, name];
-                }}
-              />
-              {!isMobile && <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12 }} />}
-
-              {percentMode && (
-                <ReferenceLine
-                  y={100}
-                  stroke="#94a3b8"
-                  strokeDasharray="4 4"
-                  label={{ value: '100%', position: 'insideTopRight', fontSize: 10 }}
-                />
-              )}
-
-              {plottedAnomalies.map(({ anomaly, chartTime, y }) => (
-                <ReferenceDot
-                  key={anomaly.id}
-                  x={chartTime}
-                  y={y}
-                  r={7}
-                  fill={SEVERITY_DOT[anomaly.severity] ?? '#999'}
-                  stroke="#fff"
-                  strokeWidth={2}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setSelectedAnomaly(anomaly)}
-                />
-              ))}
-
-              {sensors.map((sensor, index) => {
-                if (hiddenSensors.has(sensor.id)) return null;
-                const style = CHART_LINE_STYLES[index % CHART_LINE_STYLES.length];
-                return (
-                  <Line
-                    key={sensor.id}
-                    type="monotone"
-                    dataKey={sensor.label}
-                    stroke={style.stroke}
-                    strokeWidth={style.strokeWidth}
-                    strokeDasharray={style.strokeDasharray}
-                    dot={isLive ? { r: 2 } : false}
-                    connectNulls
-                    activeDot={{ r: 4 }}
-                    isAnimationActive={false}
-                  />
-                );
-              })}
-            </ComposedChart>
-          </ResponsiveContainer>
+        <div className="chart-shell" style={{ height: chartHeight }}>
+          <ChartCanvas
+            chartData={chartData}
+            sensors={sensors}
+            hiddenSensors={hiddenSensors}
+            isMobile={isMobile}
+            isLive={isLive}
+            percentMode={percentMode}
+            yDomain={yDomain}
+            stressStartX={stressStartX}
+            stressStartedAt={stressStartedAt}
+            stressPhase={stressPhase}
+            plottedAnomalies={plottedAnomalies}
+            onAnomalyClick={handleAnomalyClick}
+          />
         </div>
       </Card>
 
       <AnomalyDetailModal
         anomaly={selectedAnomaly}
-        open={!!selectedAnomaly}
-        onClose={() => setSelectedAnomaly(null)}
+        open={selectedAnomaly != null}
+        onClose={handleModalClose}
       />
     </>
   );
