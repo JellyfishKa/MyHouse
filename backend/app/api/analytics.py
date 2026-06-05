@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta, timezone
 from typing import List
 from uuid import UUID
@@ -86,24 +87,43 @@ async def get_object_health(
         cutoff = cutoff.replace(tzinfo=timezone.utc)
 
     query = (
-        select(Anomaly.severity, func.count().label("cnt"))
+        select(Anomaly.severity, Anomaly.detected_at)
         .join(Sensor, Sensor.id == Anomaly.sensor_id)
         .where(
             Sensor.object_id == object_id,
             Anomaly.detected_at >= cutoff,
         )
-        .group_by(Anomaly.severity)
     )
     rows = (await db.execute(query)).all()
 
-    counts: dict[str, int] = {r.severity.value if hasattr(r.severity, "value") else str(r.severity): r.cnt for r in rows}
+    now = datetime.now(timezone.utc)
+    severity_weights = {
+        SeverityLevel.CRITICAL.value: 25,
+        SeverityLevel.HIGH.value: 15,
+        SeverityLevel.MEDIUM.value: 5,
+        SeverityLevel.LOW.value: 2,
+    }
+    counts: dict[str, int] = {}
+    weighted_penalty = 0.0
+
+    for row in rows:
+        sev = row.severity.value if hasattr(row.severity, "value") else str(row.severity)
+        counts[sev] = counts.get(sev, 0) + 1
+        detected = row.detected_at
+        if detected.tzinfo is None:
+            detected = detected.replace(tzinfo=timezone.utc)
+        age_hours = (now - detected).total_seconds() / 3600
+        # Exponential decay: half-weight after 72 h so old anomalies fade naturally
+        decay = math.exp(-0.693 * age_hours / 72)
+        weighted_penalty += severity_weights.get(sev, 2) * decay
+
     critical = counts.get(SeverityLevel.CRITICAL.value, 0)
     high = counts.get(SeverityLevel.HIGH.value, 0)
     medium = counts.get(SeverityLevel.MEDIUM.value, 0)
     low = counts.get(SeverityLevel.LOW.value, 0)
 
-    score = max(0.0, 100.0 - (critical * 25 + high * 15 + medium * 5 + low * 2))
-    grade = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 50 else "D"
+    score = max(0.0, min(100.0, 100.0 - weighted_penalty))
+    grade = "A" if score >= 85 else "B" if score >= 65 else "C" if score >= 40 else "D"
 
     return HealthScore(
         object_id=object_id,
@@ -159,8 +179,8 @@ async def get_object_rul(
     low = counts.get(SeverityLevel.LOW.value, 0)
     total = critical + high + medium + low
 
-    # Severity-weighted remaining useful life (days), no artificial floor at 7.
-    burden = critical * 30 + high * 18 + medium * 6 + low * 2
+    # Severity-weighted remaining useful life (days); weights match health score for consistent signals.
+    burden = critical * 25 + high * 15 + medium * 5 + low * 2
     rul_days = max(0, min(365, int(365 - burden)))
 
     if rul_days >= 180:

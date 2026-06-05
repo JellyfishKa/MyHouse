@@ -27,7 +27,14 @@ def session_is_active(session: StressSession | None, *, now: datetime | None = N
     started = _ensure_tz(session.started_at)
     duration = session.duration_seconds or STRESS_DEFAULT_DURATION_SEC
     current = now or datetime.now(timezone.utc)
-    return current < started + timedelta(seconds=duration)
+    if current >= started + timedelta(seconds=duration):
+        return False
+    # Stale guard: worker updates updated_at every tick (~2s); 10s silence means crashed worker
+    if session.updated_at is not None:
+        updated = _ensure_tz(session.updated_at)
+        if (current - updated).total_seconds() > 10:
+            return False
+    return True
 
 
 async def begin_stress_session(

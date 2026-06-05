@@ -28,7 +28,6 @@ import { useNotificationLog } from '../context/NotificationLogContext';
 import NotificationLogPanel from '../components/NotificationLogPanel';
 
 const POLL_MS = 2000;
-const STRESS_END_GRACE_MS = 5_000;
 const RETRAIN_STEPS = [9, 18, 36, 54];
 
 export type { StressPhaseInfo };
@@ -78,7 +77,7 @@ function scheduleEndTimer(
   onEnd: () => void,
 ) {
   if (endTimerRef.current) window.clearTimeout(endTimerRef.current);
-  const delay = Math.max(0, endsAt - Date.now() + STRESS_END_GRACE_MS);
+  const delay = Math.max(0, endsAt - Date.now());
   endTimerRef.current = window.setTimeout(onEnd, delay);
 }
 
@@ -144,7 +143,8 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
 
   useEffect(() => {
     if (remoteStatus?.step != null && active) {
-      setServerStep(remoteStatus.step);
+      const maxStep = Math.floor(durationSecRef.current / 2);
+      setServerStep(Math.max(0, Math.min(maxStep, remoteStatus.step)));
     }
   }, [remoteStatus?.step, active]);
 
@@ -157,7 +157,7 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
     retrainDoneRef.current.clear();
     startedAtRef.current = undefined;
     isInitiatorRef.current = false;
-    autoJoinAttemptedRef.current = undefined;
+    // do NOT reset autoJoinAttemptedRef here — keeps blocking re-join while backend still reports active
     setActive(false);
     setIsInitiator(false);
     setEquipmentId(undefined);
@@ -281,16 +281,15 @@ export function StressTestProvider({ objectId, children }: StressTestProviderPro
       setStressObjectId(objId);
       setStartedAt(start);
       setEndsAt(end);
-      setServerStep(initialStep);
+      const maxStep = Math.floor(durationSeconds / 2);
+      setServerStep(initialStep != null ? Math.max(0, Math.min(maxStep, initialStep)) : undefined);
       setIsInitiator(initiator);
       setActive(true);
       setTick(0);
 
       scheduleEndTimer(endTimerRef, end, () => {
         endStressTest({ localOnly: !isInitiatorRef.current });
-        if (isInitiatorRef.current) {
-          message.info('Стресс-тест завершён');
-        }
+        message.info('Стресс-тест завершён');
       });
     },
     [endStressTest, clearLog],

@@ -304,7 +304,7 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
     object_id: uuid.UUID | None = None
     deadline = datetime.now(timezone.utc) + timedelta(seconds=duration_sec)
     fired: set[tuple[int, str, str, str, str]] = set()
-    rng = random.Random(42)
+    rng = random.Random()
 
     try:
         async with async_session_local() as db:
@@ -324,7 +324,12 @@ async def _stress_test_worker(equipment_id: uuid.UUID, duration_sec: int) -> Non
 
             while True:
                 now = datetime.now(timezone.utc)
-                if now >= deadline or object_id in _stress_cancel_objects:
+                if now >= deadline:
+                    if object_id:
+                        await set_stress_step(db, object_id, step, equipment_id)
+                        await db.commit()
+                    break
+                if object_id in _stress_cancel_objects:
                     break
                 if object_id:
                     live_session = await get_stress_session(db, object_id)
